@@ -220,8 +220,8 @@ func (m *Manager) getActionText() string {
 		return fmt.Sprintf("  [%s]u[white]=DirUsage  [%s]Tab[white]=Devices  [%s]r[white]=Refresh  [%s]ESC[white]=Home",
 			highlight, highlight, highlight, highlight)
 	}
-	return fmt.Sprintf("  [%s]c[white]=Create  [%s]d[white]=Delete  [%s]f[white]=Format  [%s]m[white]=Mount/Unmount  [%s]Tab[white]=Filesystems  [%s]ESC[white]=Home",
-		highlight, highlight, highlight, highlight, highlight, highlight)
+	return fmt.Sprintf("  [%s]c[white]=Create  [%s]d[white]=Delete  [%s]f[white]=Format  [%s]m[white]=Mount  [%s]i[white]=Info  [%s]Tab[white]=Filesystems  [%s]ESC[white]=Home",
+		highlight, highlight, highlight, highlight, highlight, highlight, highlight)
 }
 
 // handleInput processes key events for filesystem table
