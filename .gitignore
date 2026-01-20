@@ -1,0 +1,38 @@
+# Binaries
+systask
+*.exe
+
+# Build output
+build/
+dist/
+
+# Test output
+coverage.out
+coverage.html
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Debug
+debug
+*.log
+
+# Go
+vendor/
+go.work
+
+# Config (user-specific)
+config.yaml
+
+# Temporary files
+tmp/
+*.tmp

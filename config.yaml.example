@@ -1,0 +1,105 @@
+# Sample SysTask Configuration
+# Location: ~/.config/systask/config.yaml
+
+# Theme (12 available)
+# Options: catppuccin, dracula, nord, gruvbox, solarized, tokyo-night,
+#          monokai, one-dark, cyberpunk, forest, ocean, sunset
+theme: catppuccin
+
+# Host definitions
+# Hosts from ~/.ssh/config are auto-discovered and merged
+hosts:
+  # Production servers
+  - name: prod-web-01
+    hostname: 192.168.1.10
+    port: 22
+    user: admin
+    key_path: ~/.ssh/production_key
+    group: Production
+    provider: custom
+    auth_type: key
+
+  - name: prod-web-02
+    hostname: 192.168.1.11
+    port: 22
+    user: admin
+    key_path: ~/.ssh/production_key
+    group: Production
+    provider: custom
+    auth_type: key
+
+  - name: prod-db-master
+    hostname: 192.168.1.20
+    port: 22
+    user: postgres
+    key_path: ~/.ssh/production_key
+    group: Production
+    provider: custom
+    auth_type: key
+
+  # Staging servers
+  - name: staging-api
+    hostname: 10.0.0.50
+    port: 22
+    user: deploy
+    group: Staging
+    provider: custom
+    auth_type: agent  # Uses ssh-agent
+
+  - name: staging-worker
+    hostname: 10.0.0.51
+    port: 22
+    user: deploy
+    group: Staging
+    provider: custom
+    auth_type: agent
+
+  # Cloud instances (AWS example)
+  - name: aws-bastion
+    hostname: ec2-12-34-56-78.compute.amazonaws.com
+    port: 22
+    user: ec2-user
+    key_path: ~/.ssh/aws-key.pem
+    group: Cloud
+    provider: aws
+    auth_type: key
+
+  # Development / Local VMs
+  - name: dev-vm
+    hostname: 127.0.0.1
+    port: 2222
+    user: vagrant
+    key_path: ~/.vagrant.d/insecure_private_key
+    group: Development
+    provider: custom
+    auth_type: key
+
+# Host groups for organization
+# These create collapsible sections in the sidebar
+groups:
+  - name: Production
+    icon: "🔴"
+    color: "#ff5555"
+    
+  - name: Staging
+    icon: "🟡"
+    color: "#f1fa8c"
+    
+  - name: Development
+    icon: "🟢"
+    color: "#50fa7b"
+    
+  - name: Cloud
+    icon: "☁️"
+    color: "#8be9fd"
+
+# Authentication types:
+# - key      : Use SSH key file (specify key_path)
+# - password : Use password (stored encrypted)
+# - agent    : Use running ssh-agent
+
+# Provider options:
+# - custom : Manually added host
+# - aws    : Amazon Web Services
+# - gcp    : Google Cloud Platform
+# - azure  : Microsoft Azure
