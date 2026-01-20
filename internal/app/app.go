@@ -131,6 +131,11 @@ func (a *App) Run() error {
 	a.dockerModule.SetApp(a.tviewApp)
 	a.servicesModule.SetApp(a.tviewApp)
 	a.sftpModule.SetApp(a.tviewApp)
+	a.processesModule.SetApp(a.tviewApp)
+	a.logsModule.SetApp(a.tviewApp)
+	a.diskModule.SetApp(a.tviewApp)
+	a.usersModule.SetApp(a.tviewApp)
+	a.installerModule.SetApp(a.tviewApp)
 
 	// Show fzf status
 	if a.hasFzf {
@@ -647,6 +652,12 @@ func (a *App) setTheme(name string) {
 	a.batchModule.SetApp(a.tviewApp)
 	a.dockerModule.SetApp(a.tviewApp)
 	a.servicesModule.SetApp(a.tviewApp)
+	a.sftpModule.SetApp(a.tviewApp)
+	a.processesModule.SetApp(a.tviewApp)
+	a.logsModule.SetApp(a.tviewApp)
+	a.diskModule.SetApp(a.tviewApp)
+	a.usersModule.SetApp(a.tviewApp)
+	a.installerModule.SetApp(a.tviewApp)
 
 	// Re-add module pages
 	a.layout.MainView().AddPage("health", a.healthModule.View(), true, false)
@@ -806,13 +817,23 @@ func (a *App) switchModule(module string) {
 	a.helpOverlay.SetContext(module)
 	a.layout.StatusBar().SetStatus(fmt.Sprintf("Loading %s...", module))
 
-	// For modules not requiring connection, just switch
+	// For modules not requiring connection, just switch (but still refresh if connected)
 	if noConnectionRequired {
 		a.layout.MainView().SwitchToPage(module)
-		a.layout.StatusBar().SetStatus(fmt.Sprintf("Module: %s | ESC=Home r=Refresh", module))
-		// Set focus for batch module
-		if module == "batch" {
-			a.batchModule.Focus()
+		a.layout.StatusBar().SetStatus(fmt.Sprintf("Module: %s | Tab=Switch ESC=Home", module))
+		// Set focus to the module's main view
+		a.setModuleFocus(module)
+
+		// For installer, try to refresh if connected to detect package manager
+		if module == "installer" && a.isConnected() {
+			go func() {
+				if a.installerModule != nil {
+					a.installerModule.Refresh()
+					if a.tviewApp != nil {
+						a.tviewApp.QueueUpdateDraw(func() {})
+					}
+				}
+			}()
 		}
 		return
 	}
@@ -835,6 +856,8 @@ func (a *App) switchModule(module string) {
 			err = a.usersModule.Refresh()
 		case "docker":
 			err = a.dockerModule.Refresh()
+		case "installer":
+			err = a.installerModule.Refresh()
 		}
 
 		a.tviewApp.QueueUpdateDraw(func() {
@@ -842,10 +865,38 @@ func (a *App) switchModule(module string) {
 				a.layout.StatusBar().SetAlert(err.Error(), true)
 			} else {
 				a.layout.MainView().SwitchToPage(module)
-				a.layout.StatusBar().SetStatus(fmt.Sprintf("Module: %s | ESC=Home r=Refresh", module))
+				a.layout.StatusBar().SetStatus(fmt.Sprintf("Module: %s | Tab=Switch ESC=Home", module))
+				// Set focus to the module's main view
+				a.setModuleFocus(module)
 			}
 		})
 	}()
+}
+
+// setModuleFocus sets focus to the module's primary interactive component
+func (a *App) setModuleFocus(module string) {
+	switch module {
+	case "health":
+		a.tviewApp.SetFocus(a.healthModule.View()) // Health has no Focus method
+	case "services":
+		a.servicesModule.Focus()
+	case "processes":
+		a.processesModule.Focus()
+	case "logs":
+		a.logsModule.Focus()
+	case "disks":
+		a.diskModule.Focus()
+	case "users":
+		a.usersModule.Focus()
+	case "docker":
+		a.dockerModule.Focus()
+	case "installer":
+		a.installerModule.Focus()
+	case "sftp":
+		a.sftpModule.Focus()
+	case "batch":
+		a.batchModule.Focus()
+	}
 }
 
 // runCommand executes a command on selected server(s)

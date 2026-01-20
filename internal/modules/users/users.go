@@ -42,6 +42,7 @@ type Manager struct {
 	theme      *config.Theme
 	sshClient  *ssh.Client
 	host       *ssh.HostEntry
+	app        *tview.Application
 
 	users       []User
 	groups      []Group
@@ -302,6 +303,22 @@ func (m *Manager) handleGroupInput(event *tcell.EventKey) *tcell.EventKey {
 // SetHost sets the current host
 func (m *Manager) SetHost(host *ssh.HostEntry) {
 	m.host = host
+}
+
+// SetApp sets the tview application reference
+func (m *Manager) SetApp(app *tview.Application) {
+	m.app = app
+}
+
+// Focus sets focus to the current table
+func (m *Manager) Focus() {
+	if m.app != nil {
+		if m.currentTab == "users" {
+			m.app.SetFocus(m.userTable)
+		} else {
+			m.app.SetFocus(m.groupTable)
+		}
+	}
 }
 
 // Refresh updates the user and group lists

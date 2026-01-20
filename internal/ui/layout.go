@@ -56,7 +56,7 @@ func (l *Layout) build() {
 	// Main content area with border
 	mainContent := tview.NewFlex()
 	mainContent.SetDirection(tview.FlexColumn)
-	mainContent.AddItem(l.serverList.View(), 35, 0, true)
+	mainContent.AddItem(l.serverList.View(), 28, 0, true) // Fits most hostnames
 	mainContent.AddItem(l.mainView, 0, 1, false)
 	mainContent.SetBackgroundColor(l.theme.Background)
 

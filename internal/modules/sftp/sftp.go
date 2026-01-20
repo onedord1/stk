@@ -1040,6 +1040,13 @@ func (m *Manager) View() *tview.Flex {
 	return m.view
 }
 
+// Focus sets focus to the source list
+func (m *Manager) Focus() {
+	if m.app != nil {
+		m.app.SetFocus(m.srcList)
+	}
+}
+
 // Helpers
 func colorToTag(c tcell.Color) string {
 	r, g, b := c.RGB()

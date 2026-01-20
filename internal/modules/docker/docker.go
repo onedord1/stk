@@ -319,6 +319,17 @@ func (m *Manager) SetHost(host *ssh.HostEntry) {
 	m.host = host
 }
 
+// Focus sets focus to the current table
+func (m *Manager) Focus() {
+	if m.app != nil {
+		if m.currentTab == "containers" {
+			m.app.SetFocus(m.containerTbl)
+		} else {
+			m.app.SetFocus(m.imageTbl)
+		}
+	}
+}
+
 // Refresh updates container and image lists
 func (m *Manager) Refresh() error {
 	if m.host == nil {

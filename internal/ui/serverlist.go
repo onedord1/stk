@@ -187,6 +187,11 @@ func (sl *ServerList) refresh(groups map[string][]ssh.HostEntry) {
 				name = h.Hostname
 			}
 
+			// Truncate long hostnames to fit in sidebar (max 18 chars for name)
+			if len(name) > 18 {
+				name = name[:15] + "..."
+			}
+
 			icon := sl.getStatusIcon(StatusDisconnected)
 			keyIcon := ""
 			if h.KeyFile != "" {
@@ -197,7 +202,12 @@ func (sl *ServerList) refresh(groups map[string][]ssh.HostEntry) {
 
 			secondary := ""
 			if h.Hostname != "" {
-				secondary = fmt.Sprintf("    %s", h.Hostname)
+				hostDisplay := h.Hostname
+				// Truncate long hostnames in secondary text too
+				if len(hostDisplay) > 20 {
+					hostDisplay = hostDisplay[:17] + "..."
+				}
+				secondary = fmt.Sprintf("    %s", hostDisplay)
 				if h.Port != 0 && h.Port != 22 {
 					secondary += fmt.Sprintf(":%d", h.Port)
 				}

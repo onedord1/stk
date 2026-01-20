@@ -14,24 +14,27 @@ import (
 
 // Metrics holds system health data
 type Metrics struct {
-	CPUUsage    float64
-	CPUCores    int
-	MemTotal    uint64
-	MemUsed     uint64
-	MemFree     uint64
-	MemPercent  float64
-	SwapTotal   uint64
-	SwapUsed    uint64
-	DiskTotal   uint64
-	DiskUsed    uint64
-	DiskPercent float64
-	LoadAvg     [3]float64
-	Uptime      string
-	Hostname    string
-	OS          string
-	Kernel      string
-	NetworkRX   uint64
-	NetworkTX   uint64
+	CPUUsage     float64
+	CPUCores     int
+	MemTotal     uint64
+	MemUsed      uint64
+	MemFree      uint64
+	MemPercent   float64
+	SwapTotal    uint64
+	SwapUsed     uint64
+	SwapPercent  float64
+	DiskTotal    uint64
+	DiskUsed     uint64
+	DiskPercent  float64
+	LoadAvg      [3]float64
+	Uptime       string
+	Hostname     string
+	OS           string
+	Kernel       string
+	ProcessCount int
+	UserCount    int
+	NetworkRX    string
+	NetworkTX    string
 }
 
 // Dashboard displays health metrics
@@ -42,11 +45,12 @@ type Dashboard struct {
 	host      *ssh.HostEntry
 
 	// Widgets
-	cpuGauge  *tview.TextView
-	memGauge  *tview.TextView
-	diskGauge *tview.TextView
-	infoBox   *tview.TextView
-	loadBox   *tview.TextView
+	cpuPanel     *tview.TextView
+	memPanel     *tview.TextView
+	diskPanel    *tview.TextView
+	systemPanel  *tview.TextView
+	networkPanel *tview.TextView
+	quickStats   *tview.TextView
 }
 
 // NewDashboard creates a new health dashboard
@@ -61,64 +65,73 @@ func NewDashboard(theme *config.Theme, client *ssh.Client) *Dashboard {
 
 // build constructs the dashboard layout
 func (d *Dashboard) build() {
-	// CPU gauge
-	d.cpuGauge = tview.NewTextView()
-	d.cpuGauge.SetDynamicColors(true)
-	d.cpuGauge.SetBorder(true)
-	d.cpuGauge.SetTitle(" CPU ")
-	d.cpuGauge.SetTitleColor(d.theme.Primary)
-	d.cpuGauge.SetBorderColor(d.theme.Border)
-	d.cpuGauge.SetBackgroundColor(d.theme.Background)
+	// CPU Panel with big gauge
+	d.cpuPanel = tview.NewTextView()
+	d.cpuPanel.SetDynamicColors(true)
+	d.cpuPanel.SetBorder(true)
+	d.cpuPanel.SetTitle(" 🔥 CPU ")
+	d.cpuPanel.SetTitleColor(d.theme.Primary)
+	d.cpuPanel.SetBorderColor(d.theme.Border)
+	d.cpuPanel.SetBackgroundColor(d.theme.Background)
 
-	// Memory gauge
-	d.memGauge = tview.NewTextView()
-	d.memGauge.SetDynamicColors(true)
-	d.memGauge.SetBorder(true)
-	d.memGauge.SetTitle(" Memory ")
-	d.memGauge.SetTitleColor(d.theme.Primary)
-	d.memGauge.SetBorderColor(d.theme.Border)
-	d.memGauge.SetBackgroundColor(d.theme.Background)
+	// Memory Panel
+	d.memPanel = tview.NewTextView()
+	d.memPanel.SetDynamicColors(true)
+	d.memPanel.SetBorder(true)
+	d.memPanel.SetTitle(" 💾 Memory & Swap ")
+	d.memPanel.SetTitleColor(d.theme.Primary)
+	d.memPanel.SetBorderColor(d.theme.Border)
+	d.memPanel.SetBackgroundColor(d.theme.Background)
 
-	// Disk gauge
-	d.diskGauge = tview.NewTextView()
-	d.diskGauge.SetDynamicColors(true)
-	d.diskGauge.SetBorder(true)
-	d.diskGauge.SetTitle(" Disk (/) ")
-	d.diskGauge.SetTitleColor(d.theme.Primary)
-	d.diskGauge.SetBorderColor(d.theme.Border)
-	d.diskGauge.SetBackgroundColor(d.theme.Background)
+	// Disk Panel
+	d.diskPanel = tview.NewTextView()
+	d.diskPanel.SetDynamicColors(true)
+	d.diskPanel.SetBorder(true)
+	d.diskPanel.SetTitle(" 💿 Disk Usage ")
+	d.diskPanel.SetTitleColor(d.theme.Primary)
+	d.diskPanel.SetBorderColor(d.theme.Border)
+	d.diskPanel.SetBackgroundColor(d.theme.Background)
 
-	// System info
-	d.infoBox = tview.NewTextView()
-	d.infoBox.SetDynamicColors(true)
-	d.infoBox.SetBorder(true)
-	d.infoBox.SetTitle(" System Info ")
-	d.infoBox.SetTitleColor(d.theme.Primary)
-	d.infoBox.SetBorderColor(d.theme.Border)
-	d.infoBox.SetBackgroundColor(d.theme.Background)
+	// System Info Panel
+	d.systemPanel = tview.NewTextView()
+	d.systemPanel.SetDynamicColors(true)
+	d.systemPanel.SetBorder(true)
+	d.systemPanel.SetTitle(" 🖥️  System Info ")
+	d.systemPanel.SetTitleColor(d.theme.Primary)
+	d.systemPanel.SetBorderColor(d.theme.Border)
+	d.systemPanel.SetBackgroundColor(d.theme.Background)
 
-	// Load average
-	d.loadBox = tview.NewTextView()
-	d.loadBox.SetDynamicColors(true)
-	d.loadBox.SetBorder(true)
-	d.loadBox.SetTitle(" Load Average ")
-	d.loadBox.SetTitleColor(d.theme.Primary)
-	d.loadBox.SetBorderColor(d.theme.Border)
-	d.loadBox.SetBackgroundColor(d.theme.Background)
+	// Network Panel
+	d.networkPanel = tview.NewTextView()
+	d.networkPanel.SetDynamicColors(true)
+	d.networkPanel.SetBorder(true)
+	d.networkPanel.SetTitle(" 🌐 Network & Load ")
+	d.networkPanel.SetTitleColor(d.theme.Primary)
+	d.networkPanel.SetBorderColor(d.theme.Border)
+	d.networkPanel.SetBackgroundColor(d.theme.Background)
 
-	// Layout: gauges on top row, info on bottom
-	gaugeRow := tview.NewFlex()
-	gaugeRow.AddItem(d.cpuGauge, 0, 1, false)
-	gaugeRow.AddItem(d.memGauge, 0, 1, false)
-	gaugeRow.AddItem(d.diskGauge, 0, 1, false)
+	// Quick Stats (bottom bar)
+	d.quickStats = tview.NewTextView()
+	d.quickStats.SetDynamicColors(true)
+	d.quickStats.SetBackgroundColor(d.theme.Muted)
+	d.quickStats.SetTextAlign(tview.AlignCenter)
 
-	infoRow := tview.NewFlex()
-	infoRow.AddItem(d.infoBox, 0, 2, false)
-	infoRow.AddItem(d.loadBox, 0, 1, false)
+	// Top Row: CPU | Memory | Disk
+	topRow := tview.NewFlex()
+	topRow.AddItem(d.cpuPanel, 0, 1, false)
+	topRow.AddItem(d.memPanel, 0, 1, false)
+	topRow.AddItem(d.diskPanel, 0, 1, false)
 
+	// Bottom Row: System Info | Network
+	bottomRow := tview.NewFlex()
+	bottomRow.AddItem(d.systemPanel, 0, 2, false)
+	bottomRow.AddItem(d.networkPanel, 0, 1, false)
+
+	// Main Layout
 	d.view = tview.NewFlex().SetDirection(tview.FlexRow)
-	d.view.AddItem(gaugeRow, 0, 1, false)
-	d.view.AddItem(infoRow, 0, 1, false)
+	d.view.AddItem(topRow, 0, 1, false)
+	d.view.AddItem(bottomRow, 0, 1, false)
+	d.view.AddItem(d.quickStats, 2, 0, false)
 	d.view.SetBackgroundColor(d.theme.Background)
 }
 
@@ -180,7 +193,7 @@ func (d *Dashboard) fetchMetrics() (*Metrics, error) {
 	m.Hostname = strings.TrimSpace(hostnameOutput)
 
 	osOutput, _ := d.sshClient.RunCommand(*d.host,
-		"cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'")
+		`cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '"'`)
 	m.OS = strings.TrimSpace(osOutput)
 
 	kernelOutput, _ := d.sshClient.RunCommand(*d.host, "uname -r")
@@ -188,6 +201,30 @@ func (d *Dashboard) fetchMetrics() (*Metrics, error) {
 
 	uptimeOutput, _ := d.sshClient.RunCommand(*d.host, "uptime -p 2>/dev/null || uptime")
 	m.Uptime = strings.TrimSpace(uptimeOutput)
+
+	// Get process count
+	procOutput, _ := d.sshClient.RunCommand(*d.host, "ps aux | wc -l")
+	if proc, err := strconv.Atoi(strings.TrimSpace(procOutput)); err == nil {
+		m.ProcessCount = proc - 1 // subtract header
+	}
+
+	// Get user count
+	userOutput, _ := d.sshClient.RunCommand(*d.host, "who | wc -l")
+	if users, err := strconv.Atoi(strings.TrimSpace(userOutput)); err == nil {
+		m.UserCount = users
+	}
+
+	// Get network stats
+	rxOutput, _ := d.sshClient.RunCommand(*d.host,
+		`cat /sys/class/net/*/statistics/rx_bytes 2>/dev/null | awk '{sum+=$1} END {print sum}'`)
+	if rx, err := strconv.ParseUint(strings.TrimSpace(rxOutput), 10, 64); err == nil {
+		m.NetworkRX = formatBytes(rx)
+	}
+	txOutput, _ := d.sshClient.RunCommand(*d.host,
+		`cat /sys/class/net/*/statistics/tx_bytes 2>/dev/null | awk '{sum+=$1} END {print sum}'`)
+	if tx, err := strconv.ParseUint(strings.TrimSpace(txOutput), 10, 64); err == nil {
+		m.NetworkTX = formatBytes(tx)
+	}
 
 	return m, nil
 }
@@ -213,6 +250,9 @@ func (d *Dashboard) parseSwap(output string, m *Metrics) {
 	if len(matches) >= 2 {
 		m.SwapTotal, _ = strconv.ParseUint(matches[0], 10, 64)
 		m.SwapUsed, _ = strconv.ParseUint(matches[1], 10, 64)
+		if m.SwapTotal > 0 {
+			m.SwapPercent = float64(m.SwapUsed) / float64(m.SwapTotal) * 100
+		}
 	}
 }
 
@@ -242,89 +282,203 @@ func (d *Dashboard) updateDisplay(m *Metrics) {
 	primary := colorToTag(d.theme.Primary)
 	success := colorToTag(d.theme.Success)
 	warning := colorToTag(d.theme.Warning)
-	err := colorToTag(d.theme.Error)
+	errColor := colorToTag(d.theme.Error)
+	muted := colorToTag(d.theme.Muted)
+	highlight := colorToTag(d.theme.Highlight)
 
-	// CPU gauge
+	// CPU Panel - Big centered percentage with visual bar
 	cpuColor := success
 	if m.CPUUsage > 80 {
-		cpuColor = err
+		cpuColor = errColor
 	} else if m.CPUUsage > 50 {
 		cpuColor = warning
 	}
-	d.cpuGauge.SetText(fmt.Sprintf(
-		"\n  [%s]%.1f%%[white]\n\n  %s\n  %d cores",
-		cpuColor, m.CPUUsage,
-		d.progressBar(m.CPUUsage, cpuColor),
-		m.CPUCores,
-	))
+	cpuIcon := "▼"
+	if m.CPUUsage > 50 {
+		cpuIcon = "▲"
+	}
+	d.cpuPanel.SetText(fmt.Sprintf(`
+  [%s]%s CPU USAGE[white]
+  
+  [%s]  ╔═══════════════════╗[white]
+  [%s]  ║[white] [%s]%6.1f%%[white]          [%s]║[white]
+  [%s]  ╚═══════════════════╝[white]
 
-	// Memory gauge
+  %s
+
+  [%s]Cores:[white] [%s]%d[white]  │  [%s]Threads/Core:[white] [%s]2[white]`,
+		cpuColor, cpuIcon,
+		primary,
+		primary, cpuColor, m.CPUUsage, primary,
+		primary,
+		d.fancyProgressBar(m.CPUUsage, cpuColor, 25),
+		muted, highlight, m.CPUCores, muted, highlight))
+
+	// Memory Panel - RAM + Swap with visual bars
 	memColor := success
 	if m.MemPercent > 80 {
-		memColor = err
+		memColor = errColor
 	} else if m.MemPercent > 50 {
 		memColor = warning
 	}
-	d.memGauge.SetText(fmt.Sprintf(
-		"\n  [%s]%.1f%%[white]\n\n  %s\n  %s / %s",
-		memColor, m.MemPercent,
-		d.progressBar(m.MemPercent, memColor),
-		formatBytes(m.MemUsed), formatBytes(m.MemTotal),
-	))
 
-	// Disk gauge
+	swapColor := success
+	if m.SwapPercent > 50 {
+		swapColor = warning
+	}
+	if m.SwapPercent > 80 {
+		swapColor = errColor
+	}
+
+	swapLine := ""
+	if m.SwapTotal > 0 {
+		swapLine = fmt.Sprintf(`
+  [%s]SWAP[white]  %s
+         [%s]%.1f%%[white] (%s / %s)`,
+			muted, d.fancyProgressBar(m.SwapPercent, swapColor, 25),
+			swapColor, m.SwapPercent, formatBytes(m.SwapUsed), formatBytes(m.SwapTotal))
+	} else {
+		swapLine = fmt.Sprintf("\n  [%s]SWAP[white]  [%s]Not configured[white]", muted, muted)
+	}
+
+	d.memPanel.SetText(fmt.Sprintf(`
+  [%s]RAM [white]  %s
+         [%s]%.1f%%[white] (%s / %s)
+%s
+
+  [%s]Free:[white] [%s]%s[white]`,
+		muted, d.fancyProgressBar(m.MemPercent, memColor, 25),
+		memColor, m.MemPercent, formatBytes(m.MemUsed), formatBytes(m.MemTotal),
+		swapLine,
+		muted, success, formatBytes(m.MemFree)))
+
+	// Disk Panel
 	diskColor := success
 	if m.DiskPercent > 90 {
-		diskColor = err
+		diskColor = errColor
 	} else if m.DiskPercent > 70 {
 		diskColor = warning
 	}
-	d.diskGauge.SetText(fmt.Sprintf(
-		"\n  [%s]%.1f%%[white]\n\n  %s\n  %s / %s",
-		diskColor, m.DiskPercent,
-		d.progressBar(m.DiskPercent, diskColor),
-		formatBytes(m.DiskUsed), formatBytes(m.DiskTotal),
-	))
 
-	// System info
-	d.infoBox.SetText(fmt.Sprintf(
-		"\n  [%s]Hostname:[white] %s\n"+
-			"  [%s]OS:[white] %s\n"+
-			"  [%s]Kernel:[white] %s\n"+
-			"  [%s]Uptime:[white] %s",
-		primary, m.Hostname,
-		primary, m.OS,
-		primary, m.Kernel,
-		primary, m.Uptime,
-	))
+	diskIcon := "●"
+	if m.DiskPercent > 80 {
+		diskIcon = "⚠"
+	}
 
-	// Load average
+	d.diskPanel.SetText(fmt.Sprintf(`
+  [%s]%s ROOT (/)
+  
+  %s
+
+  [%s]Used:[white]  [%s]%s[white]
+  [%s]Total:[white] [%s]%s[white]
+  [%s]Free:[white]  [%s]%s[white]`,
+		diskColor, diskIcon,
+		d.bigProgressBar(m.DiskPercent, diskColor, 25),
+		muted, diskColor, formatBytes(m.DiskUsed),
+		muted, highlight, formatBytes(m.DiskTotal),
+		muted, success, formatBytes(m.DiskTotal-m.DiskUsed)))
+
+	// System Panel - More info
+	d.systemPanel.SetText(fmt.Sprintf(`
+  [%s]┌─ SYSTEM ─────────────────────────────────────┐[white]
+  [%s]│[white]
+  [%s]│[white]  [%s]Hostname:[white]   [%s]%s[white]
+  [%s]│[white]  [%s]OS:[white]         [%s]%s[white]
+  [%s]│[white]  [%s]Kernel:[white]     [%s]%s[white]
+  [%s]│[white]  [%s]Uptime:[white]     [%s]%s[white]
+  [%s]│[white]
+  [%s]│[white]  [%s]Processes:[white]  [%s]%d[white] running
+  [%s]│[white]  [%s]Users:[white]      [%s]%d[white] logged in
+  [%s]│[white]
+  [%s]└────────────────────────────────────────────────┘[white]`,
+		primary,
+		primary,
+		primary, muted, highlight, m.Hostname,
+		primary, muted, highlight, truncateStr(m.OS, 35),
+		primary, muted, highlight, m.Kernel,
+		primary, muted, success, m.Uptime,
+		primary,
+		primary, muted, highlight, m.ProcessCount,
+		primary, muted, highlight, m.UserCount,
+		primary,
+		primary))
+
+	// Network & Load Panel
 	loadColor := success
 	if m.LoadAvg[0] > float64(m.CPUCores) {
-		loadColor = err
+		loadColor = errColor
 	} else if m.LoadAvg[0] > float64(m.CPUCores)*0.7 {
 		loadColor = warning
 	}
-	d.loadBox.SetText(fmt.Sprintf(
-		"\n  [%s]1 min:[white]  %.2f\n"+
-			"  [%s]5 min:[white]  %.2f\n"+
-			"  [%s]15 min:[white] %.2f",
-		loadColor, m.LoadAvg[0],
-		loadColor, m.LoadAvg[1],
-		loadColor, m.LoadAvg[2],
-	))
+
+	d.networkPanel.SetText(fmt.Sprintf(`
+  [%s]⬇ RECEIVED[white]
+    [%s]%s[white]
+
+  [%s]⬆ TRANSMITTED[white]
+    [%s]%s[white]
+
+  [%s]━━ LOAD AVERAGE ━━[white]
+
+  [%s]1m:[white]  [%s]%.2f[white]
+  [%s]5m:[white]  [%s]%.2f[white]
+  [%s]15m:[white] [%s]%.2f[white]`,
+		success,
+		highlight, m.NetworkRX,
+		warning,
+		highlight, m.NetworkTX,
+		muted,
+		muted, loadColor, m.LoadAvg[0],
+		muted, loadColor, m.LoadAvg[1],
+		muted, loadColor, m.LoadAvg[2]))
+
+	// Quick Stats Bar
+	d.quickStats.SetText(fmt.Sprintf(
+		"  [%s]CPU:[white] [%s]%.0f%%[white]  │  [%s]RAM:[white] [%s]%.0f%%[white]  │  [%s]DISK:[white] [%s]%.0f%%[white]  │  [%s]LOAD:[white] [%s]%.2f[white]  │  [%s]PROCS:[white] [%s]%d[white]  │  [%s]Press[white] [%s]r[white] [%s]to refresh[white]",
+		muted, cpuColor, m.CPUUsage,
+		muted, memColor, m.MemPercent,
+		muted, diskColor, m.DiskPercent,
+		muted, loadColor, m.LoadAvg[0],
+		muted, highlight, m.ProcessCount,
+		muted, highlight, muted))
 }
 
-// progressBar creates a text progress bar
-func (d *Dashboard) progressBar(percent float64, color string) string {
-	width := 20
+// fancyProgressBar creates a colorful progress bar with gradient effect
+func (d *Dashboard) fancyProgressBar(percent float64, color string, width int) string {
 	filled := int(percent / 100 * float64(width))
 	if filled > width {
 		filled = width
 	}
 
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+	bar := ""
+	for i := 0; i < width; i++ {
+		if i < filled {
+			bar += "█"
+		} else {
+			bar += "░"
+		}
+	}
 	return fmt.Sprintf("[%s]%s[white]", color, bar)
+}
+
+// bigProgressBar creates a larger visual progress bar
+func (d *Dashboard) bigProgressBar(percent float64, color string, width int) string {
+	filled := int(percent / 100 * float64(width))
+	if filled > width {
+		filled = width
+	}
+
+	bar := fmt.Sprintf("  [%s]", color)
+	for i := 0; i < width; i++ {
+		if i < filled {
+			bar += "▓"
+		} else {
+			bar += "░"
+		}
+	}
+	bar += fmt.Sprintf("[white] [%s]%.1f%%[white]", color, percent)
+	return bar
 }
 
 // View returns the dashboard view
@@ -349,4 +503,11 @@ func formatBytes(b uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func truncateStr(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }

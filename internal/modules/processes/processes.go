@@ -44,6 +44,7 @@ type Manager struct {
 	theme      *config.Theme
 	sshClient  *ssh.Client
 	host       *ssh.HostEntry
+	app        *tview.Application
 
 	processes   []Process
 	selectedIdx int
@@ -183,6 +184,18 @@ func (m *Manager) killProcess(pid int, signal string) {
 // SetHost sets the current host
 func (m *Manager) SetHost(host *ssh.HostEntry) {
 	m.host = host
+}
+
+// SetApp sets the tview application reference
+func (m *Manager) SetApp(app *tview.Application) {
+	m.app = app
+}
+
+// Focus sets focus to the process table
+func (m *Manager) Focus() {
+	if m.app != nil {
+		m.app.SetFocus(m.table)
+	}
 }
 
 // Refresh updates the process list

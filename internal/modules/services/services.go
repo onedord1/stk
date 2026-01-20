@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -41,12 +42,14 @@ type Manager struct {
 	host       *ssh.HostEntry
 	app        *tview.Application
 
-	services    []Service
-	running     []Service
-	currentTab  string
-	selectedIdx int
-	filter      string
-	showLogs    bool
+	services         []Service
+	running          []Service
+	currentTab       string
+	selectedIdx      int
+	filter           string
+	showLogs         bool
+	followingService string
+	stopFollow       chan struct{}
 }
 
 // NewManager creates a new service manager
@@ -281,6 +284,17 @@ func (m *Manager) SetApp(app *tview.Application) {
 	m.app = app
 }
 
+// Focus sets focus to the services table
+func (m *Manager) Focus() {
+	if m.app != nil {
+		if m.currentTab == "running" {
+			m.app.SetFocus(m.runningTbl)
+		} else {
+			m.app.SetFocus(m.table)
+		}
+	}
+}
+
 // Refresh updates the service list
 func (m *Manager) Refresh() error {
 	if m.host == nil {
@@ -499,17 +513,47 @@ func (m *Manager) showServiceLogs(serviceName string) {
 	m.logsView.SetText(output)
 }
 
-// followLogs shows continuously updated logs
+// followLogs shows continuously updated logs (real-time polling)
 func (m *Manager) followLogs(serviceName string) {
+	// Stop any existing follow
+	if m.stopFollow != nil {
+		close(m.stopFollow)
+	}
+
 	m.showLogs = true
 	m.logPages.SwitchToPage("logs")
+	m.followingService = serviceName
+	m.stopFollow = make(chan struct{})
 
-	m.logsView.SetTitle(fmt.Sprintf(" Live Logs: %s (updating...) ", serviceName))
+	m.logsView.SetTitle(fmt.Sprintf(" Live Logs: %s [FOLLOWING] ", serviceName))
 
-	// Get more logs
+	// Initial log load
 	output, _ := m.sshClient.RunCommand(*m.host,
 		fmt.Sprintf("journalctl -u %s.service --no-pager -n 100 2>&1", serviceName))
 	m.logsView.SetText(output)
+	m.logsView.ScrollToEnd()
+
+	// Poll every 1 second for real-time updates
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-m.stopFollow:
+				return
+			case <-ticker.C:
+				output, _ := m.sshClient.RunCommand(*m.host,
+					fmt.Sprintf("journalctl -u %s.service --no-pager -n 100 2>&1", serviceName))
+				if m.app != nil {
+					m.app.QueueUpdateDraw(func() {
+						m.logsView.SetText(output)
+						m.logsView.ScrollToEnd()
+					})
+				}
+			}
+		}
+	}()
 }
 
 // serviceAction performs a service action

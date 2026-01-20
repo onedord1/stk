@@ -35,14 +35,17 @@ type Viewer struct {
 	sourceList  *tview.List
 	logView     *tview.TextView
 	filterInput *tview.InputField
+	helpView    *tview.TextView
 	theme       *config.Theme
 	sshClient   *ssh.Client
 	host        *ssh.HostEntry
+	app         *tview.Application
 
 	sources       []LogSource
 	currentSource int
 	filter        string
 	following     bool
+	wrap          bool
 	logLines      []string
 
 	stopFollow chan struct{}
@@ -113,6 +116,12 @@ func (v *Viewer) build() {
 		v.applyFilter()
 	})
 
+	// Help bar
+	v.helpView = tview.NewTextView()
+	v.helpView.SetDynamicColors(true)
+	v.helpView.SetBackgroundColor(v.theme.Muted)
+	v.helpView.SetText(v.getHelpText())
+
 	// Layout
 	sidebar := tview.NewFlex().SetDirection(tview.FlexRow)
 	sidebar.AddItem(v.sourceList, 0, 1, true)
@@ -120,6 +129,7 @@ func (v *Viewer) build() {
 	main := tview.NewFlex().SetDirection(tview.FlexRow)
 	main.AddItem(v.logView, 0, 1, false)
 	main.AddItem(v.filterInput, 1, 0, false)
+	main.AddItem(v.helpView, 1, 0, false)
 
 	v.view = tview.NewFlex()
 	v.view.AddItem(sidebar, 20, 0, true)
@@ -130,11 +140,21 @@ func (v *Viewer) build() {
 	v.sourceList.SetInputCapture(v.handleInput)
 }
 
+// getHelpText returns the help bar text
+func (v *Viewer) getHelpText() string {
+	highlight := colorToTag(v.theme.Highlight)
+	return fmt.Sprintf("  [%s]f[white]=Follow  [%s]w[white]=Wrap  [%s]g/G[white]=Top/Bottom  [%s]/[white]=Filter  [%s]ESC[white]=Home",
+		highlight, highlight, highlight, highlight, highlight)
+}
+
 // handleInput processes key events
 func (v *Viewer) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Rune() {
 	case 'f':
 		v.toggleFollow()
+		return nil
+	case 'w':
+		v.toggleWrap()
 		return nil
 	case 'g':
 		v.logView.ScrollToBeginning()
@@ -154,9 +174,32 @@ func (v *Viewer) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
+// toggleWrap toggles word wrap mode
+func (v *Viewer) toggleWrap() {
+	v.wrap = !v.wrap
+	v.logView.SetWrap(v.wrap)
+	if v.wrap {
+		v.logView.SetTitle(fmt.Sprintf(" %s [WRAP] ", v.sources[v.currentSource].Name))
+	} else {
+		v.logView.SetTitle(fmt.Sprintf(" %s ", v.sources[v.currentSource].Name))
+	}
+}
+
 // SetHost sets the current host
 func (v *Viewer) SetHost(host *ssh.HostEntry) {
 	v.host = host
+}
+
+// SetApp sets the tview application reference
+func (v *Viewer) SetApp(app *tview.Application) {
+	v.app = app
+}
+
+// Focus sets focus to the source list
+func (v *Viewer) Focus() {
+	if v.app != nil {
+		v.app.SetFocus(v.sourceList)
+	}
 }
 
 // loadLog loads the current log source
@@ -227,7 +270,7 @@ func (v *Viewer) toggleFollow() {
 	}
 }
 
-// startFollowing starts follow mode
+// startFollowing starts follow mode (real-time polling)
 func (v *Viewer) startFollowing() {
 	if v.host == nil || v.currentSource >= len(v.sources) {
 		return
@@ -235,10 +278,16 @@ func (v *Viewer) startFollowing() {
 
 	v.following = true
 	v.stopFollow = make(chan struct{})
-	v.logView.SetTitle(fmt.Sprintf(" %s [FOLLOWING] ", v.sources[v.currentSource].Name))
 
+	wrapIndicator := ""
+	if v.wrap {
+		wrapIndicator = " [WRAP]"
+	}
+	v.logView.SetTitle(fmt.Sprintf(" %s [FOLLOWING]%s ", v.sources[v.currentSource].Name, wrapIndicator))
+
+	// Poll every 1 second for near real-time updates
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -247,6 +296,11 @@ func (v *Viewer) startFollowing() {
 				return
 			case <-ticker.C:
 				v.loadLog()
+				if v.app != nil {
+					v.app.QueueUpdateDraw(func() {
+						v.logView.ScrollToEnd()
+					})
+				}
 			}
 		}
 	}()

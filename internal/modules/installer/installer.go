@@ -81,11 +81,13 @@ type Manager struct {
 	theme        *config.Theme
 	sshClient    *ssh.Client
 	host         *ssh.HostEntry
+	app          *tview.Application
 
-	packages   []Package
-	categories []string
-	currentCat string
-	pkgManager string
+	packages        []Package
+	categories      []string
+	currentCat      string
+	pkgManager      string
+	focusOnPackages bool
 }
 
 // NewManager creates a new installer manager
@@ -137,6 +139,9 @@ func (m *Manager) build() {
 		m.updatePackageList()
 	})
 
+	// Tab handler for category list
+	m.categoryList.SetInputCapture(m.handleCategoryInput)
+
 	// Package list
 	m.packageList = tview.NewList()
 	m.packageList.ShowSecondaryText(true)
@@ -183,7 +188,7 @@ func (m *Manager) build() {
 
 	// Layout
 	m.view = tview.NewFlex()
-	m.view.AddItem(leftPanel, 20, 0, true)
+	m.view.AddItem(leftPanel, 16, 0, true) // Reduced for small screens
 	m.view.AddItem(centerPanel, 0, 1, false)
 	m.view.AddItem(rightPanel, 0, 1, false)
 	m.view.SetBackgroundColor(m.theme.Background)
@@ -240,6 +245,13 @@ func (m *Manager) handlePackageInput(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyEnter:
 		m.installPackage(pkg.Name)
 		return nil
+	case tcell.KeyTab:
+		// Switch back to categories
+		m.focusOnPackages = false
+		if m.app != nil {
+			m.app.SetFocus(m.categoryList)
+		}
+		return nil
 	}
 
 	switch event.Rune() {
@@ -249,6 +261,28 @@ func (m *Manager) handlePackageInput(event *tcell.EventKey) *tcell.EventKey {
 	case 'i':
 		m.showPackageInfo(pkg.Name)
 		return nil
+	case 'j':
+		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
+	case 'k':
+		return tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModNone)
+	}
+
+	return event
+}
+
+// handleCategoryInput handles category list input
+func (m *Manager) handleCategoryInput(event *tcell.EventKey) *tcell.EventKey {
+	switch event.Key() {
+	case tcell.KeyTab:
+		// Switch to packages
+		m.focusOnPackages = true
+		if m.app != nil {
+			m.app.SetFocus(m.packageList)
+		}
+		return nil
+	}
+
+	switch event.Rune() {
 	case 'j':
 		return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone)
 	case 'k':
@@ -298,6 +332,22 @@ func (m *Manager) SetHost(host *ssh.HostEntry) {
 	m.host = host
 }
 
+// SetApp sets the tview application reference
+func (m *Manager) SetApp(app *tview.Application) {
+	m.app = app
+}
+
+// Focus sets focus to the active list
+func (m *Manager) Focus() {
+	if m.app != nil {
+		if m.focusOnPackages {
+			m.app.SetFocus(m.packageList)
+		} else {
+			m.app.SetFocus(m.categoryList)
+		}
+	}
+}
+
 // Refresh detects package manager and checks installed packages
 func (m *Manager) Refresh() error {
 	if m.host == nil {
@@ -322,20 +372,69 @@ func (m *Manager) Refresh() error {
 
 // detectPackageManager detects the system's package manager
 func (m *Manager) detectPackageManager() string {
-	checks := []struct {
-		cmd     string
-		manager string
-	}{
-		{"which apt 2>/dev/null", "apt"},
-		{"which dnf 2>/dev/null", "dnf"},
-		{"which yum 2>/dev/null", "yum"},
-		{"which pacman 2>/dev/null", "pacman"},
-		{"which zypper 2>/dev/null", "zypper"},
+	// Simple which/type command checks - return immediately on first match
+	managers := []string{"apt-get", "apt", "dnf", "yum", "pacman", "yay", "zypper", "apk"}
+
+	for _, mgr := range managers {
+		cmd := fmt.Sprintf("which %s 2>/dev/null || type %s 2>/dev/null || command -v %s 2>/dev/null", mgr, mgr, mgr)
+		if output, err := m.sshClient.RunCommand(*m.host, cmd); err == nil && strings.TrimSpace(output) != "" {
+			// Return the canonical manager name
+			if mgr == "apt-get" || mgr == "apt" {
+				return "apt"
+			}
+			return mgr
+		}
 	}
 
-	for _, check := range checks {
-		if output, err := m.sshClient.RunCommand(*m.host, check.cmd); err == nil && len(output) > 0 {
+	// Fallback: check for package manager binaries directly
+	fallbackChecks := []struct {
+		path    string
+		manager string
+	}{
+		{"/usr/bin/apt-get", "apt"},
+		{"/usr/bin/apt", "apt"},
+		{"/usr/bin/dnf", "dnf"},
+		{"/usr/bin/yum", "yum"},
+		{"/usr/bin/pacman", "pacman"},
+		{"/usr/bin/zypper", "zypper"},
+	}
+
+	for _, check := range fallbackChecks {
+		if _, err := m.sshClient.RunCommand(*m.host, "test -x "+check.path); err == nil {
 			return check.manager
+		}
+	}
+
+	// Last resort: check /etc files for distro
+	if output, err := m.sshClient.RunCommand(*m.host, "cat /etc/os-release 2>/dev/null"); err == nil {
+		lower := strings.ToLower(output)
+		// Debian/Ubuntu family
+		if strings.Contains(lower, "ubuntu") || strings.Contains(lower, "debian") || strings.Contains(lower, "mint") {
+			return "apt"
+		}
+		// Amazon Linux uses yum/dnf
+		if strings.Contains(lower, "amzn") || strings.Contains(lower, "amazon") {
+			// Amazon Linux 2023+ uses dnf, older uses yum
+			if strings.Contains(lower, "2023") {
+				return "dnf"
+			}
+			return "yum"
+		}
+		// Red Hat family
+		if strings.Contains(lower, "fedora") || strings.Contains(lower, "rhel") || strings.Contains(lower, "centos") || strings.Contains(lower, "rocky") || strings.Contains(lower, "alma") {
+			return "dnf"
+		}
+		// Arch family
+		if strings.Contains(lower, "arch") || strings.Contains(lower, "manjaro") || strings.Contains(lower, "endeavour") {
+			return "pacman"
+		}
+		// SUSE family
+		if strings.Contains(lower, "opensuse") || strings.Contains(lower, "suse") {
+			return "zypper"
+		}
+		// Alpine
+		if strings.Contains(lower, "alpine") {
+			return "apk"
 		}
 	}
 
@@ -354,12 +453,14 @@ func (m *Manager) isPackageInstalled(name string) bool {
 		cmd = fmt.Sprintf("dpkg -l %s 2>/dev/null | grep -q '^ii'", name)
 	case "dnf", "yum":
 		cmd = fmt.Sprintf("rpm -q %s 2>/dev/null", name)
-	case "pacman":
+	case "pacman", "yay":
 		cmd = fmt.Sprintf("pacman -Qi %s 2>/dev/null", name)
 	case "zypper":
 		cmd = fmt.Sprintf("rpm -q %s 2>/dev/null", name)
+	case "apk":
+		cmd = fmt.Sprintf("apk info -e %s 2>/dev/null", name)
 	default:
-		cmd = fmt.Sprintf("which %s 2>/dev/null", name)
+		cmd = fmt.Sprintf("command -v %s 2>/dev/null", name)
 	}
 
 	_, err := m.sshClient.RunCommand(*m.host, cmd)
@@ -384,11 +485,17 @@ func (m *Manager) installPackage(name string) {
 		cmd = fmt.Sprintf("sudo yum install -y %s", name)
 	case "pacman":
 		cmd = fmt.Sprintf("sudo pacman -S --noconfirm %s", name)
+	case "yay":
+		cmd = fmt.Sprintf("yay -S --noconfirm %s", name)
 	case "zypper":
 		cmd = fmt.Sprintf("sudo zypper install -y %s", name)
+	case "apk":
+		cmd = fmt.Sprintf("sudo apk add --no-cache %s", name)
 	default:
-		m.detailView.SetText(fmt.Sprintf("[%s]Unknown package manager[white]",
-			colorToTag(m.theme.Error)))
+		m.detailView.SetText(fmt.Sprintf("[%s]Unknown package manager: %s[white]\n\n"+
+			"Detected: %s\n\n"+
+			"Please install manually with your package manager.",
+			colorToTag(m.theme.Error), m.pkgManager, m.pkgManager))
 		return
 	}
 
@@ -424,8 +531,12 @@ func (m *Manager) uninstallPackage(name string) {
 		cmd = fmt.Sprintf("sudo yum remove -y %s", name)
 	case "pacman":
 		cmd = fmt.Sprintf("sudo pacman -Rs --noconfirm %s", name)
+	case "yay":
+		cmd = fmt.Sprintf("yay -Rs --noconfirm %s", name)
 	case "zypper":
 		cmd = fmt.Sprintf("sudo zypper remove -y %s", name)
+	case "apk":
+		cmd = fmt.Sprintf("sudo apk del %s", name)
 	default:
 		return
 	}
@@ -458,12 +569,14 @@ func (m *Manager) showPackageInfo(name string) {
 		cmd = fmt.Sprintf("apt-cache show %s 2>/dev/null | head -30", name)
 	case "dnf", "yum":
 		cmd = fmt.Sprintf("dnf info %s 2>/dev/null || yum info %s 2>/dev/null | head -30", name, name)
-	case "pacman":
+	case "pacman", "yay":
 		cmd = fmt.Sprintf("pacman -Si %s 2>/dev/null || pacman -Qi %s 2>/dev/null | head -30", name, name)
 	case "zypper":
 		cmd = fmt.Sprintf("zypper info %s 2>/dev/null | head -30", name)
+	case "apk":
+		cmd = fmt.Sprintf("apk info %s 2>/dev/null | head -30", name)
 	default:
-		cmd = fmt.Sprintf("which %s; %s --version 2>/dev/null || %s -v 2>/dev/null", name, name, name)
+		cmd = fmt.Sprintf("command -v %s; %s --version 2>/dev/null || %s -v 2>/dev/null", name, name, name)
 	}
 
 	output, _ := m.sshClient.RunCommand(*m.host, cmd)
