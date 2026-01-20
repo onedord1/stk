@@ -1,118 +1,62 @@
-# SysTask v1.0.0 Release Notes
+# SysTask v3.1.0 Release Notes
 
-**Release Date**: January 20, 2024
+**Release Date**: January 20, 2026
 
-## 🎉 Initial Release
+## 🚀 Major Update: Disk Partitioning & Visual Overhaul
 
-SysTask is a powerful Terminal User Interface (TUI) for managing multiple Linux servers via SSH. This initial release includes a comprehensive feature set for server administration.
+This release introduces powerful disk management capabilities and a completely redesigned Health module for better visibility into your system's status.
 
 ---
 
-## ✨ Features
+## ✨ New Features
 
-### 🖥️ 10 Management Modules
+### 🔧 Partition Management
+The Disk module now includes comprehensive partition operations. Switch to the **Block Devices** view (Tab) to manage your disks.
 
-| Module | Description |
-|--------|-------------|
-| **Health** | Real-time CPU, Memory, Disk, Network metrics |
-| **Services** | Systemd service management |
-| **Processes** | Process viewer with kill functionality |
-| **Logs** | Real-time log viewer with filtering |
-| **Disks** | Disk usage and mount information |
-| **Batch** | Multi-server command execution |
-| **Users** | User account management |
-| **Docker** | Container management |
-| **Installer** | Package installation |
-| **SFTP** | Dual-pane file manager |
+- **Create Partitions** (`c`): Generate `parted` commands to create new partitions.
+- **Delete Partitions** (`d`): Safely remove partitions with confirmation warnings.
+- **Format Partitions** (`f`): Generate commands to format partitions (ext4, xfs, btrfs, ntfs, vfat).
+- **Mount/Unmount** (`m`): Quickly toggle mount status of partitions.
+- **Device Info** (`i`): View detailed `fdisk` information for any device.
 
-### 🔌 Terminal Mode
-Fullscreen SSH terminal access - press `t` after connecting for an immersive shell experience.
+### 🏥 Redesigned Health Module
+A complete visual overhaul of the Health dashboard for instant status awareness.
 
-### 🎨 12 Color Themes
-- catppuccin (default)
-- dracula
-- nord
-- gruvbox
-- solarized
-- tokyo-night
-- monokai
-- one-dark
-- cyberpunk
-- forest
-- ocean
-- sunset
+- **Enhanced Visuals**: Big, colorful progress bars with gradient effects.
+- **New Metrics**:
+  - **Network Traffic**: Real-time RX (Receive) and TX (Transmit) stats.
+  - **Counts**: Active Process count and Logged-in User count.
+  - **Swap Usage**: Dedicated visualization for swap memory.
+- **Smart Coloring**: Indicators change color (Green/Yellow/Red) based on load.
+- **Quick Stats**: A handy footer bar summarizing key metrics.
 
-### 🔐 Security Features
-- **AES-256-GCM encryption** for stored passwords
-- **PBKDF2 key derivation** with unique salt
-- SSH key and agent authentication support
-- No plaintext credential storage
+### 📱 Responsive Layout
+Improved scaling for smaller screens (e.g., 13" laptops at 1080p).
+- **Smart Truncation**: Long hostnames are elegantly truncated (`host-name...`).
+- **Compact Sidebars**: Optimized panel widths for better screen utilization.
 
-### 📁 Host Management
-- Add, edit, delete hosts via form UI
-- Auto-discovery from `~/.ssh/config`
-- Host grouping (Production, Staging, etc.)
-- AWS/Azure/GCP PEM key support
+### 🛠️ Improvements
+- **Logs Module**: 
+  - Toggle word wrap with `w`.
+  - Follow real-time logs with `f`.
+- **Installer Module**: 
+  - Fixed package manager detection for Amazon Linux (yum/dnf) and Alpine (apk).
+  - Calling Refresh manually is no longer needed when switching tabs.
+- **General**: Added keyboard shortcut hints to various modules.
 
 ---
 
 ## 📥 Installation
 
-### Binary Download
 ```bash
-# Linux AMD64
-curl -LO https://github.com/yourusername/systask/releases/download/v1.0.0/systask-linux-amd64
-chmod +x systask-linux-amd64
-./systask-linux-amd64
-```
-
-### Build from Source
-```bash
-git clone https://github.com/yourusername/systask.git
-cd systask
+# Update existing installation
+git pull
 go build -o systask ./main.go
 ./systask
 ```
 
 ---
 
-## ⌨️ Quick Start
-
-1. **Launch**: `./systask`
-2. **Add server**: Press `a`
-3. **Connect**: Select host, press `Enter`
-4. **Switch modules**: Press `1-9` or `F`
-5. **Terminal mode**: Press `t`
-6. **Change theme**: Type `:theme dracula`
-7. **Get help**: Press `?`
-
----
-
-## 📋 Requirements
-
-- Linux (tested on Ubuntu 20.04+, Debian 10+, RHEL 8+)
-- Terminal with Unicode support
-- SSH access to remote servers
-
----
-
-## 🔗 Links
-
-- **Documentation**: See README.md
-- **Configuration**: See config.yaml.example
-- **Issues**: [GitHub Issues](https://github.com/yourusername/systask/issues)
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [tview](https://github.com/rivo/tview) - Terminal UI library
-- [tcell](https://github.com/gdamore/tcell) - Terminal cell library
-- [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) - SSH and encryption
-
----
-
-## 📄 License
-
-MIT License - see LICENSE file for details.
+## ⚠️ Important Notes
+- Partition operations are **destructive**. Always verify commands before running them.
+- Sudo privileges are required for partition management.
