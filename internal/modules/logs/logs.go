@@ -22,7 +22,7 @@ func DefaultSources() []LogSource {
 	return []LogSource{
 		{Name: "syslog", Command: "sudo tail -500 /var/log/syslog 2>/dev/null || sudo tail -500 /var/log/messages"},
 		{Name: "auth", Command: "sudo tail -500 /var/log/auth.log 2>/dev/null || sudo tail -500 /var/log/secure"},
-		{Name: "dmesg", Command: "dmesg | tail -500"},
+		{Name: "dmesg", Command: "cat /var/log/dmesg 2>/dev/null | tail -500 || dmesg 2>/dev/null | tail -500 || echo 'dmesg: Permission denied'"},
 		{Name: "journal", Command: "journalctl -n 500 --no-pager"},
 		{Name: "nginx", Command: "sudo tail -500 /var/log/nginx/access.log 2>/dev/null"},
 		{Name: "apache", Command: "sudo tail -500 /var/log/apache2/access.log 2>/dev/null || sudo tail -500 /var/log/httpd/access_log 2>/dev/null"},

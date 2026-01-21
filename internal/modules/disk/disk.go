@@ -536,13 +536,19 @@ func (m *Manager) showDeviceInfo() {
 	}
 
 	dev := m.blockDevices[m.devIdx]
-
-	// Get detailed info
-	output, _ := m.sshClient.RunCommand(*m.host,
-		fmt.Sprintf("sudo fdisk -l /dev/%s 2>/dev/null | head -20", strings.Split(dev.Name, " ")[0]))
-
 	m.detailView.SetTitle(fmt.Sprintf(" 📋 Device Info: %s ", dev.Name))
-	m.detailView.SetText(output)
+	m.detailView.SetText("Loading device info...")
+
+	go func() {
+		output, _ := m.sshClient.RunCommand(*m.host,
+			fmt.Sprintf("sudo fdisk -l /dev/%s 2>/dev/null | head -20", strings.Split(dev.Name, " ")[0]))
+
+		if m.app != nil {
+			m.app.QueueUpdateDraw(func() {
+				m.detailView.SetText(output)
+			})
+		}
+	}()
 }
 
 // SetHost sets the current host
@@ -870,33 +876,62 @@ func (m *Manager) updateDetails() {
 	fs := m.filesystems[m.selectedIdx]
 	primary := colorToTag(m.theme.Primary)
 
-	inodeOutput, _ := m.sshClient.RunCommand(*m.host,
-		fmt.Sprintf("df -i %s 2>/dev/null | tail -1", fs.MountPoint))
-
-	var inodeInfo string
-	if fields := strings.Fields(inodeOutput); len(fields) >= 5 {
-		inodeInfo = fmt.Sprintf("Inodes: %s used, %s free", fields[2], fields[3])
-	}
-
-	details := fmt.Sprintf(
+	// Show basic details immediately
+	basicDetails := fmt.Sprintf(
 		"[%s]Device:[white] %s\n"+
 			"[%s]Mount Point:[white] %s\n"+
 			"[%s]Type:[white] %s\n"+
 			"[%s]Total:[white] %s\n"+
 			"[%s]Used:[white] %s (%.1f%%)\n"+
 			"[%s]Available:[white] %s\n"+
-			"[%s]%s[white]",
+			"[%s]Loading inode info...[white]",
 		primary, fs.Device,
 		primary, fs.MountPoint,
 		primary, fs.Type,
 		primary, formatBytes(fs.Size),
 		primary, formatBytes(fs.Used), fs.UsePercent,
 		primary, formatBytes(fs.Available),
-		primary, inodeInfo,
+		primary,
 	)
 
 	m.detailView.SetTitle(" Details ")
-	m.detailView.SetText(details)
+	m.detailView.SetText(basicDetails)
+
+	// Fetch inode info asynchronously
+	go func() {
+		if m.host == nil {
+			return
+		}
+		inodeOutput, _ := m.sshClient.RunCommand(*m.host,
+			fmt.Sprintf("df -i %s 2>/dev/null | tail -1", fs.MountPoint))
+
+		var inodeInfo string
+		if fields := strings.Fields(inodeOutput); len(fields) >= 5 {
+			inodeInfo = fmt.Sprintf("Inodes: %s used, %s free", fields[2], fields[3])
+		}
+
+		if m.app != nil {
+			m.app.QueueUpdateDraw(func() {
+				details := fmt.Sprintf(
+					"[%s]Device:[white] %s\n"+
+						"[%s]Mount Point:[white] %s\n"+
+						"[%s]Type:[white] %s\n"+
+						"[%s]Total:[white] %s\n"+
+						"[%s]Used:[white] %s (%.1f%%)\n"+
+						"[%s]Available:[white] %s\n"+
+						"[%s]%s[white]",
+					primary, fs.Device,
+					primary, fs.MountPoint,
+					primary, fs.Type,
+					primary, formatBytes(fs.Size),
+					primary, formatBytes(fs.Used), fs.UsePercent,
+					primary, formatBytes(fs.Available),
+					primary, inodeInfo,
+				)
+				m.detailView.SetText(details)
+			})
+		}
+	}()
 }
 
 // showDirUsage shows directory usage for a mount point
@@ -905,14 +940,22 @@ func (m *Manager) showDirUsage(mountPoint string) {
 		return
 	}
 
-	output, err := m.sshClient.RunCommand(*m.host,
-		fmt.Sprintf("du -h --max-depth=1 %s 2>/dev/null | sort -rh | head -20", mountPoint))
-	if err != nil {
-		return
-	}
-
 	m.detailView.SetTitle(fmt.Sprintf(" Directory Usage: %s ", mountPoint))
-	m.detailView.SetText(output)
+	m.detailView.SetText("Loading directory usage...")
+
+	go func() {
+		output, err := m.sshClient.RunCommand(*m.host,
+			fmt.Sprintf("du -h --max-depth=1 %s 2>/dev/null | sort -rh | head -20", mountPoint))
+		if m.app != nil {
+			m.app.QueueUpdateDraw(func() {
+				if err != nil {
+					m.detailView.SetText(fmt.Sprintf("[red]Error: %v[white]", err))
+					return
+				}
+				m.detailView.SetText(output)
+			})
+		}
+	}()
 }
 
 // View returns the manager view

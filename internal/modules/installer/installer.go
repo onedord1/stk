@@ -447,18 +447,21 @@ func (m *Manager) isPackageInstalled(name string) bool {
 		return false
 	}
 
+	// Get distro-specific package name
+	pkgName := getDistroPackageName(m.pkgManager, name)
+
 	var cmd string
 	switch m.pkgManager {
 	case "apt":
-		cmd = fmt.Sprintf("dpkg -l %s 2>/dev/null | grep -q '^ii'", name)
+		cmd = fmt.Sprintf("dpkg -l %s 2>/dev/null | grep -q '^ii'", pkgName)
 	case "dnf", "yum":
-		cmd = fmt.Sprintf("rpm -q %s 2>/dev/null", name)
+		cmd = fmt.Sprintf("rpm -q %s 2>/dev/null", pkgName)
 	case "pacman", "yay":
-		cmd = fmt.Sprintf("pacman -Qi %s 2>/dev/null", name)
+		cmd = fmt.Sprintf("pacman -Qi %s 2>/dev/null", pkgName)
 	case "zypper":
-		cmd = fmt.Sprintf("rpm -q %s 2>/dev/null", name)
+		cmd = fmt.Sprintf("rpm -q %s 2>/dev/null", pkgName)
 	case "apk":
-		cmd = fmt.Sprintf("apk info -e %s 2>/dev/null", name)
+		cmd = fmt.Sprintf("apk info -e %s 2>/dev/null", pkgName)
 	default:
 		cmd = fmt.Sprintf("command -v %s 2>/dev/null", name)
 	}
@@ -475,22 +478,25 @@ func (m *Manager) installPackage(name string) {
 		return
 	}
 
+	// Get distro-specific package name
+	pkgName := getDistroPackageName(m.pkgManager, name)
+
 	var cmd string
 	switch m.pkgManager {
 	case "apt":
-		cmd = fmt.Sprintf("sudo apt-get update && sudo apt-get install -y %s", name)
+		cmd = fmt.Sprintf("sudo apt-get update && sudo apt-get install -y %s", pkgName)
 	case "dnf":
-		cmd = fmt.Sprintf("sudo dnf install -y %s", name)
+		cmd = fmt.Sprintf("sudo dnf install -y %s", pkgName)
 	case "yum":
-		cmd = fmt.Sprintf("sudo yum install -y %s", name)
+		cmd = fmt.Sprintf("sudo yum install -y %s", pkgName)
 	case "pacman":
-		cmd = fmt.Sprintf("sudo pacman -S --noconfirm %s", name)
+		cmd = fmt.Sprintf("sudo pacman -S --noconfirm %s", pkgName)
 	case "yay":
-		cmd = fmt.Sprintf("yay -S --noconfirm %s", name)
+		cmd = fmt.Sprintf("yay -S --noconfirm %s", pkgName)
 	case "zypper":
-		cmd = fmt.Sprintf("sudo zypper install -y %s", name)
+		cmd = fmt.Sprintf("sudo zypper install -y %s", pkgName)
 	case "apk":
-		cmd = fmt.Sprintf("sudo apk add --no-cache %s", name)
+		cmd = fmt.Sprintf("sudo apk add --no-cache %s", pkgName)
 	default:
 		m.detailView.SetText(fmt.Sprintf("[%s]Unknown package manager: %s[white]\n\n"+
 			"Detected: %s\n\n"+
@@ -521,22 +527,25 @@ func (m *Manager) uninstallPackage(name string) {
 		return
 	}
 
+	// Get distro-specific package name
+	pkgName := getDistroPackageName(m.pkgManager, name)
+
 	var cmd string
 	switch m.pkgManager {
 	case "apt":
-		cmd = fmt.Sprintf("sudo apt-get remove -y %s", name)
+		cmd = fmt.Sprintf("sudo apt-get remove -y %s", pkgName)
 	case "dnf":
-		cmd = fmt.Sprintf("sudo dnf remove -y %s", name)
+		cmd = fmt.Sprintf("sudo dnf remove -y %s", pkgName)
 	case "yum":
-		cmd = fmt.Sprintf("sudo yum remove -y %s", name)
+		cmd = fmt.Sprintf("sudo yum remove -y %s", pkgName)
 	case "pacman":
-		cmd = fmt.Sprintf("sudo pacman -Rs --noconfirm %s", name)
+		cmd = fmt.Sprintf("sudo pacman -Rs --noconfirm %s", pkgName)
 	case "yay":
-		cmd = fmt.Sprintf("yay -Rs --noconfirm %s", name)
+		cmd = fmt.Sprintf("yay -Rs --noconfirm %s", pkgName)
 	case "zypper":
-		cmd = fmt.Sprintf("sudo zypper remove -y %s", name)
+		cmd = fmt.Sprintf("sudo zypper remove -y %s", pkgName)
 	case "apk":
-		cmd = fmt.Sprintf("sudo apk del %s", name)
+		cmd = fmt.Sprintf("sudo apk del %s", pkgName)
 	default:
 		return
 	}
@@ -604,4 +613,108 @@ func truncate(s string, max int) string {
 		return strings.Join(lines[:20], "\n") + "\n..."
 	}
 	return s[:max-3] + "..."
+}
+
+// getDistroPackageName returns the correct package name for the detected distro/package manager
+func getDistroPackageName(pkgManager, genericName string) string {
+	// Package name mappings: generic -> {pkgManager: distroSpecificName}
+	mappings := map[string]map[string]string{
+		"docker": {
+			"apt":    "docker.io",
+			"dnf":    "docker",
+			"yum":    "docker",
+			"pacman": "docker",
+			"yay":    "docker",
+			"zypper": "docker",
+			"apk":    "docker",
+		},
+		"docker-compose": {
+			"apt":    "docker-compose",
+			"dnf":    "docker-compose",
+			"yum":    "docker-compose",
+			"pacman": "docker-compose",
+			"yay":    "docker-compose",
+			"zypper": "docker-compose",
+			"apk":    "docker-compose",
+		},
+		"apache2": {
+			"apt":    "apache2",
+			"dnf":    "httpd",
+			"yum":    "httpd",
+			"pacman": "apache",
+			"yay":    "apache",
+			"zypper": "apache2",
+			"apk":    "apache2",
+		},
+		"mysql-server": {
+			"apt":    "mysql-server",
+			"dnf":    "mysql-server",
+			"yum":    "mysql-server",
+			"pacman": "mysql",
+			"yay":    "mysql",
+			"zypper": "mysql-server",
+			"apk":    "mysql",
+		},
+		"postgresql": {
+			"apt":    "postgresql",
+			"dnf":    "postgresql-server",
+			"yum":    "postgresql-server",
+			"pacman": "postgresql",
+			"yay":    "postgresql",
+			"zypper": "postgresql-server",
+			"apk":    "postgresql",
+		},
+		"redis": {
+			"apt":    "redis-server",
+			"dnf":    "redis",
+			"yum":    "redis",
+			"pacman": "redis",
+			"yay":    "redis",
+			"zypper": "redis",
+			"apk":    "redis",
+		},
+		"nodejs": {
+			"apt":    "nodejs",
+			"dnf":    "nodejs",
+			"yum":    "nodejs",
+			"pacman": "nodejs",
+			"yay":    "nodejs",
+			"zypper": "nodejs",
+			"apk":    "nodejs",
+		},
+		"golang": {
+			"apt":    "golang",
+			"dnf":    "golang",
+			"yum":    "golang",
+			"pacman": "go",
+			"yay":    "go",
+			"zypper": "go",
+			"apk":    "go",
+		},
+		"ripgrep": {
+			"apt":    "ripgrep",
+			"dnf":    "ripgrep",
+			"yum":    "ripgrep",
+			"pacman": "ripgrep",
+			"yay":    "ripgrep",
+			"zypper": "ripgrep",
+			"apk":    "ripgrep",
+		},
+		"neovim": {
+			"apt":    "neovim",
+			"dnf":    "neovim",
+			"yum":    "neovim",
+			"pacman": "neovim",
+			"yay":    "neovim",
+			"zypper": "neovim",
+			"apk":    "neovim",
+		},
+	}
+
+	if pkgMap, exists := mappings[genericName]; exists {
+		if distroName, found := pkgMap[pkgManager]; found {
+			return distroName
+		}
+	}
+	return genericName
 }

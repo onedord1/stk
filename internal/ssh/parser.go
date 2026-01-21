@@ -20,6 +20,7 @@ type HostEntry struct {
 	KeyFile   string
 	ProxyJump string
 	Source    string // "config" or "known_hosts"
+	Group     string // Custom group name for organization
 }
 
 // ParseSSHConfig parses ~/.ssh/config file

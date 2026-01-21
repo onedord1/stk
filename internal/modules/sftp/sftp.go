@@ -47,6 +47,7 @@ type Manager struct {
 	hostSelector *tview.List
 	transferList *tview.Table
 	statusView   *tview.TextView
+	helpView     *tview.TextView
 	pages        *tview.Pages
 	theme        *config.Theme
 	sshClient    *ssh.Client
@@ -67,6 +68,13 @@ type Manager struct {
 	selectingFor  string // "source" or "dest"
 	srcIsLocal    bool
 	dstIsLocal    bool
+
+	// Clipboard for copy/paste
+	clipboard       []FileEntry
+	clipboardHost   *ssh.HostEntry
+	clipboardIsLocal bool
+	clipboardDir    string
+	clipboardMove   bool // true = cut, false = copy
 }
 
 // NewManager creates a new SFTP manager
@@ -149,11 +157,17 @@ func (m *Manager) build() {
 	m.transferList.SetTitle(" 📤 Transfer Queue ")
 	m.transferList.SetTitleColor(m.theme.Primary)
 
-	// Status/help view
+	// Help bar (permanent)
+	m.helpView = tview.NewTextView()
+	m.helpView.SetDynamicColors(true)
+	m.helpView.SetBackgroundColor(m.theme.Background)
+	m.helpView.SetText(m.getHelpText())
+
+	// Status view (for messages)
 	m.statusView = tview.NewTextView()
 	m.statusView.SetDynamicColors(true)
 	m.statusView.SetBackgroundColor(m.theme.Muted)
-	m.statusView.SetText(m.getHelpText())
+	m.statusView.SetText(fmt.Sprintf("[%s]Ready. Select files with Space, then copy/paste.[white]", colorToTag(m.theme.Success)))
 
 	// File panels side by side
 	filePanels := tview.NewFlex()
@@ -166,7 +180,8 @@ func (m *Manager) build() {
 	mainView := tview.NewFlex().SetDirection(tview.FlexRow)
 	mainView.AddItem(filePanels, 0, 3, true)
 	mainView.AddItem(m.transferList, 8, 0, false)
-	mainView.AddItem(m.statusView, 2, 0, false)
+	mainView.AddItem(m.helpView, 1, 0, false)
+	mainView.AddItem(m.statusView, 1, 0, false)
 
 	m.pages.AddPage("main", mainView, true, true)
 	m.pages.AddPage("hostselect", m.hostSelector, true, false)
@@ -217,8 +232,8 @@ func (m *Manager) createFileTable(name string) *tview.Table {
 func (m *Manager) getHelpText() string {
 	highlight := colorToTag(m.theme.Highlight)
 	return fmt.Sprintf(
-		"  [%s]Tab[white]=Switch Panel  [%s]h[white]=Select Host  [%s]Enter[white]=Open Dir  [%s]Space[white]=Select  [%s]c[white]=Copy  [%s]m[white]=Move  [%s]d[white]=Delete  [%s]r[white]=Refresh",
-		highlight, highlight, highlight, highlight, highlight, highlight, highlight, highlight)
+		"  [%s]Tab[white]=Switch  [%s]h[white]=Host  [%s]Enter[white]=Open  [%s]Space[white]=Select  [%s]c[white]=Copy  [%s]x[white]=Cut  [%s]p[white]=Paste  [%s]d[white]=Delete  [%s]r[white]=Refresh",
+		highlight, highlight, highlight, highlight, highlight, highlight, highlight, highlight, highlight)
 }
 
 // handleSrcInput handles source panel input
@@ -237,10 +252,13 @@ func (m *Manager) handleSrcInput(event *tcell.EventKey) *tcell.EventKey {
 		m.toggleSelection(true)
 		return nil
 	case 'c':
-		m.startTransfer(false)
+		m.copyToClipboard(true, false)
 		return nil
-	case 'm':
-		m.startTransfer(true)
+	case 'x':
+		m.copyToClipboard(true, true)
+		return nil
+	case 'p':
+		m.pasteFromClipboard(true)
 		return nil
 	case 'd':
 		m.deleteSelected(true)
@@ -282,10 +300,13 @@ func (m *Manager) handleDstInput(event *tcell.EventKey) *tcell.EventKey {
 		m.toggleSelection(false)
 		return nil
 	case 'c':
-		m.startTransfer(false)
+		m.copyToClipboard(false, false)
 		return nil
-	case 'm':
-		m.startTransfer(true)
+	case 'x':
+		m.copyToClipboard(false, true)
+		return nil
+	case 'p':
+		m.pasteFromClipboard(false)
 		return nil
 	case 'd':
 		m.deleteSelected(false)
@@ -317,9 +338,15 @@ func (m *Manager) switchFocus() {
 	if m.focusLeft {
 		m.srcPanel.SetBorderColor(m.theme.Primary)
 		m.dstPanel.SetBorderColor(m.theme.Border)
+		if m.app != nil {
+			m.app.SetFocus(m.srcList)
+		}
 	} else {
 		m.srcPanel.SetBorderColor(m.theme.Border)
 		m.dstPanel.SetBorderColor(m.theme.Primary)
+		if m.app != nil {
+			m.app.SetFocus(m.dstList)
+		}
 	}
 }
 
@@ -418,6 +445,48 @@ func (m *Manager) selectRemoteHost(isSource bool, host *ssh.HostEntry) {
 		name = host.Hostname
 	}
 
+	// Check if connected, if not - try to connect
+	if !m.sshClient.IsConnected(*host) {
+		m.statusView.SetText(fmt.Sprintf("[%s]Connecting to %s...[white]",
+			colorToTag(m.theme.Warning), name))
+
+		// Try to connect in background
+		go func() {
+			_, err := m.sshClient.Connect(*host)
+			if m.app != nil {
+				m.app.QueueUpdateDraw(func() {
+					if err != nil {
+						m.statusView.SetText(fmt.Sprintf("[%s]Connection failed: %v[white]",
+							colorToTag(m.theme.Error), err))
+						return
+					}
+
+					m.statusView.SetText(fmt.Sprintf("[%s]Connected to %s[white]",
+						colorToTag(m.theme.Success), name))
+
+					// Now load the directory
+					if isSource {
+						m.srcIsLocal = false
+						m.srcHost = host
+						m.srcPanel.SetTitle(fmt.Sprintf(" 📁 Source: %s ", name))
+						m.srcCurrentDir = "/"
+						m.loadRemoteDirectory(true, "/")
+						m.app.SetFocus(m.srcList)
+					} else {
+						m.dstIsLocal = false
+						m.dstHost = host
+						m.dstPanel.SetTitle(fmt.Sprintf(" 📁 Destination: %s ", name))
+						m.dstCurrentDir = "/"
+						m.loadRemoteDirectory(false, "/")
+						m.app.SetFocus(m.dstList)
+					}
+				})
+			}
+		}()
+		return
+	}
+
+	// Already connected - just load directory
 	if isSource {
 		m.srcIsLocal = false
 		m.srcHost = host
@@ -789,6 +858,395 @@ func (m *Manager) toggleSelection(isSource bool) {
 
 	m.updateFileTable(isSource)
 	table.Select(row, 0)
+}
+
+// copyToClipboard copies selected files to clipboard
+func (m *Manager) copyToClipboard(isSource bool, move bool) {
+	var files []FileEntry
+	var selected map[int]bool
+	var isLocal bool
+	var host *ssh.HostEntry
+	var currentDir string
+	var table *tview.Table
+	var panelName string
+
+	if isSource {
+		files = m.srcFiles
+		selected = m.srcSelected
+		isLocal = m.srcIsLocal
+		host = m.srcHost
+		currentDir = m.srcCurrentDir
+		table = m.srcList
+		panelName = "source"
+	} else {
+		files = m.dstFiles
+		selected = m.dstSelected
+		isLocal = m.dstIsLocal
+		host = m.dstHost
+		currentDir = m.dstCurrentDir
+		table = m.dstList
+		panelName = "destination"
+	}
+
+	// Collect selected files (marked with Space)
+	var selectedFiles []FileEntry
+	for idx := range selected {
+		if idx < len(files) && files[idx].Name != ".." {
+			selectedFiles = append(selectedFiles, files[idx])
+		}
+	}
+
+	// If nothing selected with Space, use currently highlighted file
+	if len(selectedFiles) == 0 && table != nil {
+		row, _ := table.GetSelection()
+		// row 0 is header, files start at row 1
+		fileIdx := row - 1
+		if fileIdx >= 0 && fileIdx < len(files) {
+			file := files[fileIdx]
+			if file.Name != ".." {
+				selectedFiles = append(selectedFiles, file)
+			}
+		}
+	}
+
+	if len(selectedFiles) == 0 {
+		row, _ := table.GetSelection()
+		m.statusView.SetText(fmt.Sprintf(
+			"[%s]No file to copy from %s (row=%d, files=%d). Select with Space or navigate to file.[white]",
+			colorToTag(m.theme.Warning), panelName, row, len(files)))
+		return
+	}
+
+	// Store in clipboard
+	m.clipboard = selectedFiles
+	m.clipboardHost = host
+	m.clipboardIsLocal = isLocal
+	m.clipboardDir = currentDir
+	m.clipboardMove = move
+
+	action := "📋 Copied"
+	if move {
+		action = "✂️ Cut"
+	}
+
+	hostName := "LOCAL"
+	if host != nil {
+		hostName = host.Name
+		if hostName == "" {
+			hostName = host.Hostname
+		}
+	}
+
+	m.statusView.SetText(fmt.Sprintf(
+		"[%s]%s %d file(s) from %s (%s). Tab to switch, 'p' to paste.[white]",
+		colorToTag(m.theme.Success), action, len(selectedFiles), panelName, hostName))
+}
+
+// pasteFromClipboard pastes files from clipboard to current panel
+func (m *Manager) pasteFromClipboard(isSource bool) {
+	if len(m.clipboard) == 0 {
+		m.statusView.SetText(fmt.Sprintf(
+			"[%s]Clipboard empty. Select file in other panel, press 'c' to copy first.[white]",
+			colorToTag(m.theme.Warning)))
+		return
+	}
+
+	// Use the passed isSource parameter - paste TO the panel where 'p' was pressed
+
+	var dstDir string
+	var dstIsLocal bool
+	var dstHost *ssh.HostEntry
+
+	if isSource {
+		dstDir = m.srcCurrentDir
+		dstIsLocal = m.srcIsLocal
+		dstHost = m.srcHost
+	} else {
+		dstDir = m.dstCurrentDir
+		dstIsLocal = m.dstIsLocal
+		dstHost = m.dstHost
+	}
+
+	srcIsLocal := m.clipboardIsLocal
+	srcHost := m.clipboardHost
+	files := m.clipboard
+	move := m.clipboardMove
+
+	action := "Copying"
+	if move {
+		action = "Moving"
+	}
+
+	totalFiles := len(files)
+	m.statusView.SetText(fmt.Sprintf("[%s]%s %d file(s)...[white]",
+		colorToTag(m.theme.Warning), action, totalFiles))
+
+	// Helper to update transfer queue progress
+	// completed = number of files fully transferred, inProgress = current file being transferred
+	updateProgress := func(completed int, fileName string, status string, isComplete bool) {
+		if m.app != nil {
+			m.app.QueueUpdateDraw(func() {
+				m.transferList.Clear()
+
+				// Calculate progress percentage
+				var percent float64
+				if isComplete {
+					percent = 100
+				} else if totalFiles == 1 {
+					// For single file, show animated progress based on status
+					switch status {
+					case "Starting...":
+						percent = 10
+					case "Downloading...":
+						percent = 30
+					case "Uploading...":
+						percent = 60
+					case "Remote copy...":
+						percent = 50
+					case "Transferring...":
+						percent = 50
+					default:
+						percent = 25
+					}
+				} else {
+					// Multiple files: show completed/total
+					percent = float64(completed) / float64(totalFiles) * 100
+				}
+
+				// Extra wide progress bar (80 chars) to fill the space
+				barWidth := 80
+				filled := int(percent / 100 * float64(barWidth))
+				if filled < 1 && percent > 0 {
+					filled = 1
+				}
+
+				// Create stylish progress bar with gradient colors
+				var bar string
+				if isComplete {
+					bar = fmt.Sprintf("[%s]%s[white] 100%%",
+						colorToTag(m.theme.Success),
+						strings.Repeat("█", barWidth))
+				} else {
+					// Animated style with different block characters
+					progressChars := strings.Repeat("█", filled)
+					emptyChars := strings.Repeat("░", barWidth-filled)
+					bar = fmt.Sprintf("[%s]%s[%s]%s[white] %.0f%%",
+						colorToTag(m.theme.Primary), progressChars,
+						colorToTag(m.theme.Muted), emptyChars, percent)
+				}
+
+				// Compact layout: FILE | WIDE PROGRESS BAR WITH STATUS
+				fileCell := tview.NewTableCell(truncate(fileName, 15)).
+					SetTextColor(m.theme.Foreground).
+					SetExpansion(0)
+				
+				// Combine bar and status in one cell for maximum width
+				statusIcon := "⏳"
+				statusColor := m.theme.Warning
+				if isComplete {
+					statusIcon = "✅"
+					statusColor = m.theme.Success
+				}
+				combinedCell := tview.NewTableCell(fmt.Sprintf("%s  [%s]%s[white]", bar, colorToTag(statusColor), statusIcon)).
+					SetExpansion(1)
+
+				m.transferList.SetCell(0, 0, fileCell)
+				m.transferList.SetCell(0, 1, combinedCell)
+
+				// Status bar with file count
+				if isComplete {
+					m.statusView.SetText(fmt.Sprintf("[%s]✓ %s complete! %d/%d files transferred.[white]",
+						colorToTag(m.theme.Success), action, completed, totalFiles))
+				} else {
+					m.statusView.SetText(fmt.Sprintf("[%s]%s %s [%d/%d][white]",
+						colorToTag(m.theme.Warning), status, fileName, completed+1, totalFiles))
+				}
+			})
+		}
+	}
+
+	// Perform transfer in background
+	go func() {
+		var err error
+
+		if srcIsLocal && dstIsLocal {
+			// Local to local
+			for i, file := range files {
+				updateProgress(i, file.Name, "Transferring...", false)
+				dst := filepath.Join(dstDir, file.Name)
+				var cmd *exec.Cmd
+				if move {
+					cmd = exec.Command("mv", file.Path, dst)
+				} else {
+					cmd = exec.Command("cp", "-r", file.Path, dst)
+				}
+				if e := cmd.Run(); e != nil {
+					err = e
+					break
+				}
+			}
+		} else if srcIsLocal && !dstIsLocal {
+			// Local to remote (upload)
+			if dstHost == nil {
+				err = fmt.Errorf("no destination host")
+			} else {
+				for i, file := range files {
+					updateProgress(i, file.Name, "Uploading...", false)
+					dst := filepath.Join(dstDir, file.Name)
+					target := fmt.Sprintf("%s@%s:%s", dstHost.User, dstHost.Hostname, dst)
+
+					args := []string{"-r", "-o", "StrictHostKeyChecking=no"}
+					if dstHost.KeyFile != "" {
+						args = append(args, "-i", dstHost.KeyFile)
+					}
+					if dstHost.Port != 0 && dstHost.Port != 22 {
+						args = append(args, "-P", fmt.Sprintf("%d", dstHost.Port))
+					}
+					args = append(args, file.Path, target)
+
+					cmd := exec.Command("scp", args...)
+					if e := cmd.Run(); e != nil {
+						err = e
+						break
+					}
+
+					if move {
+						os.RemoveAll(file.Path)
+					}
+				}
+			}
+		} else if !srcIsLocal && dstIsLocal {
+			// Remote to local (download)
+			if srcHost == nil {
+				err = fmt.Errorf("no source host")
+			} else {
+				for i, file := range files {
+					updateProgress(i, file.Name, "Downloading...", false)
+					dst := filepath.Join(dstDir, file.Name)
+					source := fmt.Sprintf("%s@%s:%s", srcHost.User, srcHost.Hostname, file.Path)
+
+					args := []string{"-r", "-o", "StrictHostKeyChecking=no"}
+					if srcHost.KeyFile != "" {
+						args = append(args, "-i", srcHost.KeyFile)
+					}
+					if srcHost.Port != 0 && srcHost.Port != 22 {
+						args = append(args, "-P", fmt.Sprintf("%d", srcHost.Port))
+					}
+					args = append(args, source, dst)
+
+					cmd := exec.Command("scp", args...)
+					if e := cmd.Run(); e != nil {
+						err = e
+						break
+					}
+
+					if move && srcHost != nil {
+						m.sshClient.RunCommand(*srcHost, fmt.Sprintf("rm -rf '%s'", file.Path))
+					}
+				}
+			}
+		} else {
+			// Remote to remote
+			if srcHost == nil || dstHost == nil {
+				err = fmt.Errorf("both hosts must be selected")
+			} else if srcHost.Hostname == dstHost.Hostname {
+				// Same host - use cp/mv on remote
+				for i, file := range files {
+					updateProgress(i, file.Name, "Remote copy...", false)
+					dst := filepath.Join(dstDir, file.Name)
+					var cmd string
+					if move {
+						cmd = fmt.Sprintf("mv '%s' '%s'", file.Path, dst)
+					} else {
+						cmd = fmt.Sprintf("cp -r '%s' '%s'", file.Path, dst)
+					}
+					if _, e := m.sshClient.RunCommand(*srcHost, cmd); e != nil {
+						err = e
+						break
+					}
+				}
+			} else {
+				// Cross-host transfer: download to temp, then upload
+				tempDir := os.TempDir()
+				for i, file := range files {
+					tempPath := filepath.Join(tempDir, file.Name)
+					dst := filepath.Join(dstDir, file.Name)
+
+					// Step 1: Download from source to local temp
+					updateProgress(i, file.Name, "Downloading...", false)
+					source := fmt.Sprintf("%s@%s:%s", srcHost.User, srcHost.Hostname, file.Path)
+					downloadArgs := []string{"-r", "-o", "StrictHostKeyChecking=no"}
+					if srcHost.KeyFile != "" {
+						downloadArgs = append(downloadArgs, "-i", srcHost.KeyFile)
+					}
+					if srcHost.Port != 0 && srcHost.Port != 22 {
+						downloadArgs = append(downloadArgs, "-P", fmt.Sprintf("%d", srcHost.Port))
+					}
+					downloadArgs = append(downloadArgs, source, tempPath)
+
+					downloadCmd := exec.Command("scp", downloadArgs...)
+					if e := downloadCmd.Run(); e != nil {
+						err = fmt.Errorf("download failed: %v", e)
+						break
+					}
+
+					// Step 2: Upload from local temp to destination
+					updateProgress(i, file.Name, "Uploading...", false)
+					target := fmt.Sprintf("%s@%s:%s", dstHost.User, dstHost.Hostname, dst)
+					uploadArgs := []string{"-r", "-o", "StrictHostKeyChecking=no"}
+					if dstHost.KeyFile != "" {
+						uploadArgs = append(uploadArgs, "-i", dstHost.KeyFile)
+					}
+					if dstHost.Port != 0 && dstHost.Port != 22 {
+						uploadArgs = append(uploadArgs, "-P", fmt.Sprintf("%d", dstHost.Port))
+					}
+					uploadArgs = append(uploadArgs, tempPath, target)
+
+					uploadCmd := exec.Command("scp", uploadArgs...)
+					if e := uploadCmd.Run(); e != nil {
+						os.RemoveAll(tempPath)
+						err = fmt.Errorf("upload failed: %v", e)
+						break
+					}
+
+					// Cleanup temp file
+					os.RemoveAll(tempPath)
+
+					// If move, delete source
+					if move {
+						m.sshClient.RunCommand(*srcHost, fmt.Sprintf("rm -rf '%s'", file.Path))
+					}
+				}
+			}
+		}
+
+		// Show final status
+		if err == nil {
+			updateProgress(totalFiles, files[len(files)-1].Name, "Complete!", true)
+		}
+
+		if m.app != nil {
+			m.app.QueueUpdateDraw(func() {
+				if err != nil {
+					m.transferList.Clear()
+					m.transferList.SetCell(0, 0, tview.NewTableCell(fmt.Sprintf(" ❌ Error: %v", err)).SetTextColor(m.theme.Error))
+					m.statusView.SetText(fmt.Sprintf("[%s]Transfer error: %v[white]",
+						colorToTag(m.theme.Error), err))
+				} else {
+					// Clear clipboard after successful move
+					if move {
+						m.clipboard = nil
+					}
+					// Clear selections
+					m.srcSelected = make(map[int]bool)
+					m.dstSelected = make(map[int]bool)
+					// Refresh panels
+					m.refreshPanel(true)
+					m.refreshPanel(false)
+				}
+			})
+		}
+	}()
 }
 
 // startTransfer initiates file transfer

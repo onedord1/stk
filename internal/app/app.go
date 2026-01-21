@@ -166,6 +166,7 @@ func (a *App) discoverHosts() {
 			User:     h.User,
 			KeyFile:  h.KeyPath,
 			Source:   h.Provider,
+			Group:    h.Group,
 		})
 	}
 
@@ -251,6 +252,7 @@ func (a *App) showAddHostForm() {
 			User:     host.User,
 			KeyFile:  host.KeyPath,
 			Source:   "manual", // Mark as manually added for edit/delete
+			Group:    host.Group,
 		})
 
 		// Refresh server list
@@ -343,7 +345,8 @@ func (a *App) editHost(host ssh.HostEntry) {
 					Port:     updatedHost.Port,
 					User:     updatedHost.User,
 					KeyFile:  updatedHost.KeyPath,
-					Source:   updatedHost.Group,
+					Source:   "manual",
+					Group:    updatedHost.Group,
 				}
 				break
 			}
@@ -445,6 +448,10 @@ func (a *App) setupKeyBindings() {
 			return nil
 
 		case 'c':
+			// Skip global 'c' handler in SFTP module (uses 'c' for copy)
+			if a.currentModule == "sftp" {
+				return event
+			}
 			if a.selectedHost != nil {
 				a.connectToHost(*a.selectedHost)
 			}

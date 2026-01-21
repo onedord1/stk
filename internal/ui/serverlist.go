@@ -112,12 +112,10 @@ func (sl *ServerList) build() {
 func (sl *ServerList) SetServers(hosts []ssh.HostEntry) {
 	sl.servers = make([]ServerItem, len(hosts))
 
-	// Group hosts by source
-	groups := map[string][]ssh.HostEntry{
-		"SSH Config": {},
-		"Cloud":      {},
-		"Custom":     {},
-	}
+	// Group hosts dynamically by their Group field or Source
+	groups := make(map[string][]ssh.HostEntry)
+	groupOrder := []string{}
+	seenGroups := make(map[string]bool)
 
 	for i, host := range hosts {
 		sl.servers[i] = ServerItem{
@@ -125,19 +123,29 @@ func (sl *ServerList) SetServers(hosts []ssh.HostEntry) {
 			Status: StatusDisconnected,
 		}
 
-		// Determine group
-		group := "SSH Config"
-		source := strings.ToLower(host.Source)
-		if source == "aws" || source == "azure" || source == "gcp" || source == "cloud" {
-			group = "Cloud"
-		} else if source == "config" || source == "manual" || source == "custom" {
-			group = "Custom"
+		// Determine group - prefer Group field, then Source, then default
+		group := host.Group
+		if group == "" {
+			// Fall back to Source-based grouping
+			source := strings.ToLower(host.Source)
+			if source == "config" || source == "known_hosts" {
+				group = "SSH Config"
+			} else if source != "" {
+				// Use the Source as group name (e.g., "custom", "aws", etc.)
+				group = strings.Title(source)
+			} else {
+				group = "Custom"
+			}
 		}
 
+		if !seenGroups[group] {
+			seenGroups[group] = true
+			groupOrder = append(groupOrder, group)
+		}
 		groups[group] = append(groups[group], host)
 	}
 
-	sl.refresh(groups)
+	sl.refreshDynamic(groups, groupOrder)
 }
 
 // refresh rebuilds the list
@@ -176,6 +184,75 @@ func (sl *ServerList) refresh(groups map[string][]ssh.HostEntry) {
 			colorToTag(sl.theme.Secondary), g.name, len(hosts))
 		sl.list.AddItem(groupText, "", 0, nil)
 		sl.groupedItems = append(sl.groupedItems, &GroupItem{Name: g.name, Count: len(hosts)})
+
+		// Servers in group
+		for _, host := range hosts {
+			h := host
+			serverItem := &ServerItem{Host: h, Status: StatusDisconnected}
+
+			name := h.Name
+			if name == "" {
+				name = h.Hostname
+			}
+
+			// Truncate long hostnames to fit in sidebar (max 18 chars for name)
+			if len(name) > 18 {
+				name = name[:15] + "..."
+			}
+
+			icon := sl.getStatusIcon(StatusDisconnected)
+			keyIcon := ""
+			if h.KeyFile != "" {
+				keyIcon = " [yellow]KEY[white]"
+			}
+
+			mainText := fmt.Sprintf("  %s %s%s", icon, name, keyIcon)
+
+			secondary := ""
+			if h.Hostname != "" {
+				hostDisplay := h.Hostname
+				// Truncate long hostnames in secondary text too
+				if len(hostDisplay) > 20 {
+					hostDisplay = hostDisplay[:17] + "..."
+				}
+				secondary = fmt.Sprintf("    %s", hostDisplay)
+				if h.Port != 0 && h.Port != 22 {
+					secondary += fmt.Sprintf(":%d", h.Port)
+				}
+			}
+
+			sl.list.AddItem(mainText, secondary, 0, nil)
+			sl.groupedItems = append(sl.groupedItems, serverItem)
+		}
+	}
+}
+
+// refreshDynamic rebuilds the list with dynamic group ordering
+func (sl *ServerList) refreshDynamic(groups map[string][]ssh.HostEntry, groupOrder []string) {
+	sl.list.Clear()
+	sl.groupedItems = nil
+
+	// Add host button
+	addText := fmt.Sprintf("[%s]+ Add Server[white]", colorToTag(sl.theme.Success))
+	sl.list.AddItem(addText, "", 'a', nil)
+	sl.groupedItems = append(sl.groupedItems, "add")
+
+	for _, groupName := range groupOrder {
+		hosts := groups[groupName]
+		if len(hosts) == 0 {
+			continue
+		}
+
+		// Sort hosts
+		sort.Slice(hosts, func(i, j int) bool {
+			return strings.ToLower(hosts[i].Name) < strings.ToLower(hosts[j].Name)
+		})
+
+		// Group header
+		groupText := fmt.Sprintf("[%s]%s (%d)[white]",
+			colorToTag(sl.theme.Secondary), groupName, len(hosts))
+		sl.list.AddItem(groupText, "", 0, nil)
+		sl.groupedItems = append(sl.groupedItems, &GroupItem{Name: groupName, Count: len(hosts)})
 
 		// Servers in group
 		for _, host := range hosts {
