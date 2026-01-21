@@ -1,0 +1,146 @@
+name: Build and Release Packages
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -o systask-${{ matrix.goos }}-${{ matrix.goarch }} ./main.go
+      
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: systask-${{ matrix.goos }}-${{ matrix.goarch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debhelper devscripts
+      
+      - name: Build binary
+        run: go build -o systask ./main.go
+      
+      - name: Create deb package
+        run: |
+          mkdir -p debian/systask/usr/bin
+          mkdir -p debian/systask/etc/systask
+          mkdir -p debian/systask/usr/share/doc/systask
+          
+          cp systask debian/systask/usr/bin/
+          cp config.yaml.example debian/systask/etc/systask/
+          cp README.md debian/systask/usr/share/doc/systask/
+          cp LICENSE debian/systask/usr/share/doc/systask/
+          
+          mkdir -p debian/systask/DEBIAN
+          cp packaging/debian/control debian/systask/DEBIAN/
+          
+          dpkg-deb --build debian/systask systask_1.0.2_amd64.deb
+      
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: systask_1.0.2_amd64.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+      
+      - name: Build binary
+        run: go build -o systask ./main.go
+      
+      - name: Create RPM package
+        run: |
+          mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          cp packaging/rpm/systask.spec rpmbuild/SPECS/
+          
+          tar czf rpmbuild/SOURCES/stk-1.0.2.tar.gz \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=rpmbuild \
+            --transform='s,^,stk-1.0.2/,' .
+          
+          rpmbuild -bb \
+            --define="_topdir $(pwd)/rpmbuild" \
+            rpmbuild/SPECS/systask.spec
+          
+          cp rpmbuild/RPMS/x86_64/systask-1.0.2-1.fc*.rpm systask-1.0.2-1.x86_64.rpm || true
+      
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: systask-1.0.2-1.x86_64.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-aur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Prepare AUR package
+        run: |
+          mkdir -p aur-systask
+          cp packaging/arch/PKGBUILD aur-systask/
+          cd aur-systask
+          
+          # Calculate SHA256 for the tarball
+          VERSION=$(echo ${{ github.ref }} | sed 's/refs\/tags\///')
+          curl -L https://github.com/onedord1/stk/archive/${VERSION}.tar.gz -o stk-${VERSION}.tar.gz
+          SHA256=$(sha256sum stk-${VERSION}.tar.gz | awk '{print $1}')
+          
+          # Update PKGBUILD with correct SHA256
+          sed -i "s/sha256sums=('SKIP')/sha256sums=('${SHA256}')/" PKGBUILD
+      
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.0
+        with:
+          pkgname: systask
+          pkgbuild: aur-systask/PKGBUILD
+          commit_username: SysTask Bot
+          commit_email: bot@systask.dev
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to ${{ github.ref_name }}

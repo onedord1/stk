@@ -1,0 +1,25 @@
+Package: systask
+Version: 1.0.2
+Architecture: amd64
+Maintainer: SysTask Team <team@systask.dev>
+Homepage: https://github.com/onedord1/stk
+Description: Terminal-based system management tool for Linux servers
+ SysTask is a comprehensive terminal UI application for managing Linux servers.
+ Features include:
+  - Real-time system health monitoring (CPU, Memory, Disk, Network)
+  - Service management (start/stop/restart systemd services)
+  - Process viewer and management
+  - Log viewer with real-time following
+  - Disk management with partition operations
+  - Batch command execution across multiple servers
+  - User management
+  - Docker container management
+  - Package installer
+  - SFTP file manager with copy/paste operations
+  - SSH terminal access
+  - 12 built-in color themes
+  - Host management with SSH config integration
+  - Encrypted credential storage
+Depends: openssh-client, scp
+Priority: optional
+Section: admin

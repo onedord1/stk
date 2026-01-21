@@ -39,27 +39,58 @@ monokai │ one-dark │ cyberpunk │ forest │ ocean │ sunset
 
 ## 🚀 Installation
 
+### Package Manager (Recommended)
+
+#### Debian/Ubuntu
+```bash
+sudo apt update
+sudo apt install systask
+```
+
+#### Fedora/RHEL/CentOS
+```bash
+sudo dnf install systask
+# or for older systems
+sudo yum install systask
+```
+
+#### Arch Linux
+```bash
+sudo pacman -S systask
+```
+
+#### Alpine Linux
+```bash
+sudo apk add systask
+```
+
 ### From Source
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/systask.git
-cd systask
+git clone https://github.com/onedord1/stk.git
+cd stk
 
-# Build
+# Build and install
+./scripts/install.sh
+
+# Or manual build
 go build -o systask ./main.go
-
-# Run
-./systask
+sudo install -Dm755 systask /usr/local/bin/systask
 ```
 
 ### Binary Release
-Download the latest binary from [Releases](https://github.com/yourusername/systask/releases).
+Download the latest binary from [Releases](https://github.com/onedord1/stk/releases).
 
 ```bash
 # Linux AMD64
-curl -LO https://github.com/yourusername/systask/releases/latest/download/systask-linux-amd64
+curl -LO https://github.com/onedord1/stk/releases/latest/download/systask-linux-amd64
 chmod +x systask-linux-amd64
 ./systask-linux-amd64
+
+# Linux ARM64
+curl -LO https://github.com/onedord1/stk/releases/latest/download/systask-linux-arm64
+chmod +x systask-linux-arm64
+./systask-linux-arm64
 ```
 
 ## ⌨️ Keyboard Shortcuts
