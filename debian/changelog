@@ -1,0 +1,6 @@
+systask (0.1.0-1) jammy; urgency=medium
+
+  [ root ]
+  * Initial release. (Closes: #XXXXXX)
+
+ -- Kader Khan <kader.devops@gmail.com>  Thu, 22 Jan 2026 18:21:39 +0000

@@ -1,0 +1,14 @@
+Source: systask
+Section: utils
+Priority: optional
+Maintainer: SysTask Maintainer <kader.devops@gmail.com>
+Build-Depends: debhelper-compat (= 13), golang-go
+Standards-Version: 4.6.2
+Homepage: https://github.com/onedord1/stk
+
+Package: systask
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: SysTask server management tool
+ Lightweight server management and automation tool written in Go.
+

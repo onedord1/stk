@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: SysTask
+Source: https://github.com/onedord1/systask
+
+Files: *
+Copyright: 2026 Kader Khan
+License: MIT
+
