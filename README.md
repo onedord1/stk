@@ -37,7 +37,26 @@ catppuccin │ dracula │ nord │ gruvbox │ solarized │ tokyo-night
 monokai │ one-dark │ cyberpunk │ forest │ ocean │ sunset
 ```
 
-## 🚀 Installation
+## Current Installation method
+
+Provide `.deb` or `rpm` on the [Release](https://github.com/onedord1/stk/releases/) page. Just downlaod a install with dpkg
+
+Example Commands:
+```
+#Debian/Ununtu
+wget https://github.com/onedord1/stk/releases/download/v1.0.3/systask_1.0.3_amd64.deb
+sudo dpkg -i systask_1.0.3_amd64.deb
+```
+```
+#Fedora/RHEL/CentOS
+wget https://github.com/onedord1/stk/releases/download/v1.0.3/systask-1.0.3-1.x86_64.rpm
+sudo rpm -i systask-1.0.3-1.x86_64.rpm
+# or
+sudo dnf install ./systask-1.0.3-1.x86_64.rpm
+```
+
+---
+## 🚀 PPA Installation (Coming soon Working On it)
 
 ### Package Manager (Recommended)
 
