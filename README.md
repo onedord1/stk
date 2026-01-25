@@ -41,6 +41,8 @@ monokai │ one-dark │ cyberpunk │ forest │ ocean │ sunset
 
 Provide `.deb` or `rpm` on the [Release](https://github.com/onedord1/stk/releases/) page. Just downlaod a install with dpkg
 
+After successful installation, just run `systask` in your terminal.
+
 Example Commands:
 ```
 #Debian/Ununtu
@@ -54,6 +56,7 @@ sudo rpm -i systask-1.0.3-1.x86_64.rpm
 # or
 sudo dnf install ./systask-1.0.3-1.x86_64.rpm
 ```
+
 
 ---
 ## 🚀 PPA Installation (Coming soon Working On it)
